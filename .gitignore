@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+db.sqlite3
+*.egg-info/
+dist/
+build/
+.eggs/
+gateway_postgres_data/
