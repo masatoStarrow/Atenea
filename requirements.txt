@@ -4,6 +4,7 @@ attrs==25.4.0
 bcrypt==5.0.0
 certifi==2026.2.25
 Django==6.0.2
+django-cors-headers==4.7.0
 django-ratelimit==4.1.0
 djangorestframework==3.16.1
 drf-spectacular==0.29.0

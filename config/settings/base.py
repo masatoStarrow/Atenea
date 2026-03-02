@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     # Third party
+    'corsheaders',
     'rest_framework',
     'drf_spectacular',
     # Local
@@ -30,6 +31,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',           # must be before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -142,3 +144,25 @@ INTERACTIONS_SERVICE_URL = config('INTERACTIONS_SERVICE_URL', default='http://in
 # ── Rate Limiting ────────────────────────────────────────────────────────
 RATE_LIMIT_LOGIN = config('RATE_LIMIT_LOGIN', default='5/minute')
 RATE_LIMIT_API = config('RATE_LIMIT_API', default='100/minute')
+
+# ── CORS ─────────────────────────────────────────────────────────────────
+# Origins that are allowed to make cross-site HTTP requests.
+# Override CORS_ALLOWED_ORIGINS in local.py / production settings.
+CORS_ALLOWED_ORIGINS: list[str] = config(
+    'CORS_ALLOWED_ORIGINS',
+    default='',
+    cast=lambda v: [s.strip() for s in v.split(',') if s.strip()],
+)
+
+# Allow cookies / Authorization header to be sent cross-origin
+CORS_ALLOW_CREDENTIALS = True
+
+# Headers the frontend is allowed to send
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'authorization',
+    'content-type',
+    'origin',
+    'x-csrftoken',
+    'x-requested-with',
+]
