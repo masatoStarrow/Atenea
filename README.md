@@ -13,6 +13,7 @@ Punto de entrada único del CRM empresarial. Autenticación JWT, autorización p
 | Base de datos | PostgreSQL 15 |
 | Autenticación | PyJWT (access token HS256) |
 | HTTP Client | httpx 0.28 (async) |
+| CORS | django-cors-headers 4.7.0 |
 | Documentación | drf-spectacular (Swagger UI + ReDoc) |
 | Logging | structlog (JSON estructurado) |
 | Testing | pytest + pytest-django |
@@ -58,7 +59,10 @@ src/
 │       │   │   ├── user_model.py          # Django User (AbstractBaseUser, UUID PK)
 │       │   │   └── blacklisted_token_model.py
 │       │   ├── django_user_repository.py  # CRUD completo con structlog
-│       │   └── django_password_verifier.py
+│       │   ├── django_password_verifier.py
+│       │   └── management/commands/
+│       │       ├── seed_users.py          # ★ Dual-write seed: crea usuarios en Gateway DB + Artemisa
+│       │       └── cleanup_blacklisted_tokens.py  # Limpia tokens expirados de la blacklist
 │       └── http_client/
 │           ├── users_client.py            # httpx async → crm-users-service
 │           └── interactions_client.py     # httpx async → crm-interactions-service
@@ -187,16 +191,60 @@ Tabla centralizada en `src/infrastructure/permissions/role_permissions.py`:
 # Levantar
 docker-compose up -d --build
 
-# Tests (48 tests)
+# Migraciones
+docker-compose exec gateway python manage.py migrate
+
+# Tests
 docker-compose exec gateway python -m pytest tests/ -v
 
-# Seed de usuarios iniciales
+# Seed de usuarios (dual-write: crea en Gateway DB Y en Artemisa con el mismo UUID)
+# ⚠️  Artemisa debe estar corriendo antes de ejecutar esto
 docker-compose exec gateway python manage.py seed_users
 ```
 
 Usuarios seed: `admin@crm.com`, `soporte@crm.com`, `comercial@crm.com` (password: `Temporal123!`)
 
-### Red compartida
+---
+
+## CORS (acceso desde el frontend)
+
+`django-cors-headers` está configurado para permitir peticiones desde el servidor de desarrollo de Vite por defecto.
+
+| Origen permitido (development) | Puerto |
+|---|---|
+| `http://localhost:5173` | Vite dev server |
+| `http://127.0.0.1:5173` | Vite dev server |
+
+Para agregar más orígenes en producción, usar la variable de entorno:
+```env
+CORS_ALLOWED_ORIGINS=https://mi-frontend.com,https://otro.com
+```
+
+---
+
+## Script de inicio automático
+
+Usar `startup.sh` para levantar todo el sistema CRM con un solo comando:
+
+```bash
+cd Atenea
+./startup.sh               # Levanta todo + migraciones + seed + tests
+./startup.sh --skip-tests  # Levanta todo + migraciones + seed (sin tests)
+./startup.sh --help        # Ver todas las opciones
+```
+
+El script:
+1. Limpia contenedores existentes
+2. Crea la red Docker `crm_network`
+3. Levanta Atenea + aplica migraciones
+4. Levanta Artemisa + aplica migraciones
+5. Espera a que Artemisa responda en `/health/`
+6. Ejecuta `seed_users` (dual-write: mismo UUID en ambas BDs)
+7. Corre los tests (opcional)
+
+---
+
+## Red compartida
 
 Ambos servicios comparten la red Docker `crm_network` para comunicación interna:
 

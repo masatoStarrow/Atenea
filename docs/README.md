@@ -37,6 +37,7 @@ El **CRM API Gateway** es el punto de entrada único para todos los clientes (fr
 | Base de datos | PostgreSQL (Docker) | 15 |
 | Autenticación | PyJWT | 2.11.0 |
 | HTTP Client (async) | httpx | 0.28.1 |
+| CORS | django-cors-headers | 4.7.0 |
 | Rate Limiting | Middleware custom | — |
 | Logging | structlog | 25.5.0 |
 | Documentación API | drf-spectacular | 0.29.0 |
@@ -103,18 +104,24 @@ cd Atenea
 # 2. Copiar variables de entorno
 cp .env.example .env
 
-# 3. Construir y levantar los contenedores
-sudo docker-compose up --build
+# 3. Crear la red compartida (una sola vez)
+sudo docker network create crm_network
 
-# 4. EN OTRA TERMINAL — Generar las migraciones del app persistence
-sudo docker-compose exec gateway python manage.py makemigrations persistence
+# 4. Construir y levantar Atenea
+sudo docker-compose up --build -d
 
 # 5. Aplicar migraciones (crear tablas en la BD)
 sudo docker-compose exec gateway python manage.py migrate
 
-# 6. Crear usuarios iniciales de prueba
+# 6. Levantar Artemisa (ver su README) y aplicar sus migraciones
+
+# 7. Crear usuarios iniciales (dual-write: se crean en Gateway DB + Artemisa con el mismo UUID)
+# ⚠️  Artemisa DEBE estar corriendo antes de ejecutar este comando
 sudo docker-compose exec gateway python manage.py seed_users
 ```
+
+> **Atajo:** usá `./startup.sh` desde la raiz de Atenea para hacer todos los pasos anteriores
+> (incluyendo Artemisa) con un solo comando.
 
 ### Ejecuciones posteriores (ya todo está creado)
 
@@ -154,8 +161,9 @@ sudo docker-compose down -v
 | Comando | Qué hace | ¿Cuándo ejecutarlo? |
 |---|---|---|
 | `sudo docker-compose exec gateway python manage.py makemigrations persistence` | Genera los archivos de migración para los modelos (User, BlacklistedToken) | **Una sola vez** en la primera instalación |
-| `sudo docker-compose exec gateway python manage.py migrate` | Crea las tablas en PostgreSQL a partir de las migraciones | **Una sola vez** al inicio (después de makemigrations), o cuando agregues/modifiques modelos |
-| `sudo docker-compose exec gateway python manage.py seed_users` | Crea 3 usuarios de prueba (admin, soporte, comercial) | **Una sola vez** después del primer migrate |
+| `sudo docker-compose exec gateway python manage.py migrate` | Crea las tablas en PostgreSQL a partir de las migraciones | **Una sola vez** al inicio, o cuando agregues/modifiques modelos |
+| `sudo docker-compose exec gateway python manage.py seed_users` | **Dual-write:** crea los 3 usuarios seed en Gateway DB **y** en Artemisa con el **mismo UUID**. Requiere Artemisa corriendo. | **Una sola vez** después del primer migrate y con Artemisa activa |
+| `sudo docker-compose exec gateway python manage.py cleanup_blacklisted_tokens` | Elimina tokens expirados de la tabla `blacklisted_tokens`. Soporta `--dry-run` y `--older-than-hours N`. | Periódicamente (cron, tarea programada) |
 | `sudo docker-compose exec gateway python manage.py makemigrations` | Genera archivos de migración si cambiaste modelos | Solo si modificás `user_model.py` u otros modelos |
 | `sudo docker-compose exec gateway python manage.py createsuperuser` | Crea un superusuario para el admin de Django | Opcional, si querés acceder a `/admin/` |
 
@@ -164,15 +172,18 @@ sudo docker-compose down -v
 ```
 Primera vez:                              Cada vez que trabajo:
 ──────────────────────────────           ─────────────────────
-docker-compose up --build                docker-compose up
-docker-compose exec ... makemigrations    (nada más)
+docker network create crm_network        docker-compose up -d
+docker-compose up --build -d              (nada más)
 docker-compose exec ... migrate
-docker-compose exec ... seed_users
+[levantar Artemisa + sus migraciones]
+docker-compose exec ... seed_users       ← requiere Artemisa corriendo
 ```
 
-**`makemigrations`, `migrate` y `seed_users` son comandos de UNA SOLA VEZ.** Los datos persisten en el volumen Docker `gateway_postgres_data`. Solo necesitás volver a ejecutarlos si:
-- Borrás los volúmenes (`docker-compose down -v`) → repetir los 3 comandos
-- Agregás nuevos modelos o campos a los existentes → solo `makemigrations` + `migrate`
+> **Alternativa recomendada:** `./startup.sh` hace todo esto automáticamente.
+
+**`migrate` y `seed_users` son comandos de UNA SOLA VEZ.** Los datos persisten en el volumen Docker `gateway_postgres_data`. Solo necesitás volver a ejecutarlos si:
+- Borrás los volúmenes (`docker-compose down -v`) → repetir los comandos
+- Agregás nuevos modelos o campos → solo `migrate`
 
 ---
 
@@ -409,6 +420,57 @@ El archivo `.env` controla toda la configuración. Se copia desde `.env.example`
 | `INTERACTIONS_SERVICE_URL` | URL interna del interactions-service | `http://interactions-service:8002` |
 | `RATE_LIMIT_LOGIN` | Intentos de login por minuto | `5/minute` |
 | `RATE_LIMIT_API` | Requests API por minuto | `100/minute` |
+| `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos (comma-separated). En desarrollo se configura en `local.py`. | `""` |
+
+---
+
+## 10. CORS
+
+`django-cors-headers` permite a un frontend hacer peticiones al gateway desde otro origen.
+
+### Configuración en development (Vite)
+
+En `config/settings/local.py` están permitidos los orígenes del servidor de desarrollo de Vite:
+
+```python
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
+```
+
+Si usás un puerto diferente en Vite (`--port 3000`), agregálo a la lista.
+
+### Configuración en producción
+
+Usar la variable de entorno (separada por comas):
+
+```env
+CORS_ALLOWED_ORIGINS=https://mi-frontend.com,https://otro-dominio.com
+```
+
+### Headers permitidos
+
+El header `Authorization` está incluido en `CORS_ALLOW_HEADERS`, por lo que los JWT pasan sin problema.
+`CORS_ALLOW_CREDENTIALS = True` permite enviar cookies y el header `Authorization` en requests cross-origin.
+
+### Uso desde Vite (fetch nativo)
+
+```js
+// Login
+const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'admin@crm.com', password: 'Temporal123!' }),
+})
+const { data } = await res.json()
+const token = data.access_token
+
+// Petición autenticada
+const users = await fetch('http://localhost:8000/api/v1/users/', {
+  headers: { Authorization: `Bearer ${token}` },
+})
+```
 
 ---
 
@@ -585,6 +647,7 @@ Atenea/
 **No.** Son comandos de una sola vez. Los datos persisten en el volumen Docker `gateway_postgres_data`. Solo repetí estos comandos si:
 - Ejecutaste `docker-compose down -v` (que borra los volúmenes)
 - Agregaste o modificaste modelos Django (solo `migrate`)
+- `seed_users` requiere además que **Artemisa esté corriendo** ya que hace dual-write.
 
 ### ¿Qué pasa si el users-service o interactions-service no están corriendo?
 
@@ -612,7 +675,7 @@ En **http://localhost:8000/api/docs/** (con el servidor corriendo).
 | `soporte@crm.com` | `Temporal123!` | soporte |
 | `comercial@crm.com` | `Temporal123!` | comercial |
 
-Se crean con el comando `python manage.py seed_users`.
+Se crean con `python manage.py seed_users` desde Atenea. El comando usa dual-write: crea cada usuario en la Gateway DB (con password hash) **y** en Artemisa (mismo UUID, sin password) en una sola operación. Artemisa debe estar corriendo cuando se ejecuta.
 
 ### ¿Cuándo necesito `--build` en docker-compose?
 
