@@ -306,7 +306,7 @@ class ClientProxyView(APIView):
 
     @extend_schema(
         summary="Desactivar cliente",
-        description="Proxy hacia users-service DELETE /clients/{id}/ (soft delete → inactivo).",
+        description="Proxy hacia users-service DELETE /clients/{id}/ (soft delete → inactive).",
         responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
         tags=["Clients (Proxy)"],
     )

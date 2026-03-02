@@ -79,10 +79,10 @@ class CreateClientProxySerializer(serializers.Serializer):
         help_text="Teléfono de contacto",
     )
     status = serializers.ChoiceField(
-        choices=["activo", "inactivo"],
+        choices=["active", "inactive"],
         required=False,
-        default="activo",
-        help_text="Estado del cliente (activo o inactivo)",
+        default="active",
+        help_text="Client status (active or inactive)",
     )
 
 
@@ -106,9 +106,9 @@ class UpdateClientProxySerializer(serializers.Serializer):
         help_text="Teléfono de contacto",
     )
     status = serializers.ChoiceField(
-        choices=["activo", "inactivo"],
+        choices=["active", "inactive"],
         required=False,
-        help_text="Estado del cliente (activo o inactivo)",
+        help_text="Client status (active or inactive)",
     )
 
 
