@@ -6,6 +6,7 @@ from django.urls import path
 
 from src.adapters.inbound.http.gateway.views import (
     UserProxyView,
+    ClientProxyView,
     InteractionProxyView,
     InteractionByClientProxyView,
 )
@@ -14,6 +15,10 @@ urlpatterns = [
     # Users proxy
     path('users/', UserProxyView.as_view(), name='proxy-users-list'),
     path('users/<uuid:user_id>/', UserProxyView.as_view(), name='proxy-users-detail'),
+
+    # Clients proxy
+    path('clients/', ClientProxyView.as_view(), name='proxy-clients-list'),
+    path('clients/<uuid:client_id>/', ClientProxyView.as_view(), name='proxy-clients-detail'),
 
     # Interactions proxy
     path('interactions/', InteractionProxyView.as_view(), name='proxy-interactions-list'),

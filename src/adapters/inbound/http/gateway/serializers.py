@@ -7,8 +7,6 @@ from rest_framework import serializers
 from ..validators import (
     validate_strong_password,
     validate_non_empty_name,
-    validate_phone_format,
-    validate_company_name,
 )
 
 
@@ -63,11 +61,11 @@ class UpdateUserProxySerializer(serializers.Serializer):
 
 class CreateClientProxySerializer(serializers.Serializer):
     """Request body para crear un cliente (proxy → users-service)."""
-    full_name = serializers.CharField(
+    company = serializers.CharField(
         required=True,
+        min_length=2,
         max_length=255,
-        validators=[validate_non_empty_name],
-        help_text="Nombre completo del cliente (min 2 caracteres, solo letras)",
+        help_text="Nombre de la empresa (requerido, min 2 caracteres)",
     )
     email = serializers.EmailField(
         required=True,
@@ -78,43 +76,23 @@ class CreateClientProxySerializer(serializers.Serializer):
         max_length=50,
         allow_blank=True,
         allow_null=True,
-        validators=[validate_phone_format],
-        help_text="Teléfono de contacto (8-15 dígitos, formato: +123456789)",
-    )
-    company = serializers.CharField(
-        required=False,
-        max_length=255,
-        allow_blank=True,
-        allow_null=True,
-        validators=[validate_company_name],
-        help_text="Empresa del cliente (min 2 caracteres si se proporciona)",
+        help_text="Teléfono de contacto",
     )
     status = serializers.ChoiceField(
-        choices=["activo", "inactivo", "prospecto"],
+        choices=["activo", "inactivo"],
         required=False,
-        default="prospecto",
-        help_text="Estado del cliente",
-    )
-    assigned_agent_id = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        help_text="UUID del agente asignado",
-    )
-    notes = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        help_text="Notas adicionales sobre el cliente",
+        default="activo",
+        help_text="Estado del cliente (activo o inactivo)",
     )
 
 
 class UpdateClientProxySerializer(serializers.Serializer):
     """Request body para actualizar un cliente (proxy → users-service)."""
-    full_name = serializers.CharField(
+    company = serializers.CharField(
         required=False,
+        min_length=2,
         max_length=255,
-        validators=[validate_non_empty_name],
-        help_text="Nombre completo del cliente (min 2 caracteres, solo letras)",
+        help_text="Nombre de la empresa",
     )
     email = serializers.EmailField(
         required=False,
@@ -125,27 +103,12 @@ class UpdateClientProxySerializer(serializers.Serializer):
         max_length=50,
         allow_blank=True,
         allow_null=True,
-        validators=[validate_phone_format],
-        help_text="Teléfono de contacto (8-15 dígitos, formato: +123456789)",
-    )
-    company = serializers.CharField(
-        required=False,
-        max_length=255,
-        allow_blank=True,
-        allow_null=True,
-        validators=[validate_company_name],
-        help_text="Empresa del cliente (min 2 caracteres si se proporciona)",
+        help_text="Teléfono de contacto",
     )
     status = serializers.ChoiceField(
-        choices=["activo", "inactivo", "prospecto"],
+        choices=["activo", "inactivo"],
         required=False,
-        help_text="Estado del cliente",
-    )
-    notes = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        help_text="Notas adicionales sobre el cliente",
+        help_text="Estado del cliente (activo o inactivo)",
     )
 
 

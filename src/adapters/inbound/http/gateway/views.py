@@ -253,6 +253,96 @@ class UserProxyView(APIView):
             return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
+class ClientProxyView(APIView):
+    """
+    Proxy for /api/v1/clients/ → users-service.
+    Pure proxy — no dual-write.
+    POST/PUT serialize validated_data to avoid RawPostDataException.
+    """
+    permission_classes = [RolePermission]
+
+    @extend_schema(
+        summary="Listar clientes",
+        description="Proxy hacia users-service GET /clients/",
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Clients (Proxy)"],
+    )
+    def get(self, request: Request, client_id=None) -> Response:
+        return self._proxy(request, 'GET', client_id)
+
+    @extend_schema(
+        summary="Crear cliente",
+        description="Proxy hacia users-service POST /clients/",
+        request=CreateClientProxySerializer,
+        responses={201: SuccessResponseSerializer, 409: ErrorResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Clients (Proxy)"],
+    )
+    def post(self, request: Request) -> Response:
+        serializer = CreateClientProxySerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"success": False, "error": {"code": "VALIDATION_ERROR", "message": serializer.errors}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        body = json.dumps(serializer.validated_data).encode()
+        return self._proxy(request, 'POST', body=body)
+
+    @extend_schema(
+        summary="Actualizar cliente",
+        description="Proxy hacia users-service PUT /clients/{id}/",
+        request=UpdateClientProxySerializer,
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Clients (Proxy)"],
+    )
+    def put(self, request: Request, client_id=None) -> Response:
+        serializer = UpdateClientProxySerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"success": False, "error": {"code": "VALIDATION_ERROR", "message": serializer.errors}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        body = json.dumps(serializer.validated_data).encode()
+        return self._proxy(request, 'PUT', client_id, body=body)
+
+    @extend_schema(
+        summary="Desactivar cliente",
+        description="Proxy hacia users-service DELETE /clients/{id}/ (soft delete → inactivo).",
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Clients (Proxy)"],
+    )
+    def delete(self, request: Request, client_id=None) -> Response:
+        return self._proxy(request, 'DELETE', client_id)
+
+    def _proxy(self, request: Request, method: str, client_id=None, body: bytes | None = None) -> Response:
+        client = UsersServiceClient()
+        path = '/clients'
+        if client_id:
+            path = f'/clients/{client_id}'
+
+        if body is None and method in ('POST', 'PUT', 'PATCH'):
+            body = request.body
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method=method,
+                    path=path,
+                    body=body,
+                    query_params=request.query_params.dict() if request.query_params else None,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
 class InteractionProxyView(APIView):
     """Proxy for /api/v1/interactions/ → interactions-service."""
     permission_classes = [RolePermission]
