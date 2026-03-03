@@ -133,7 +133,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 # ── JWT ──────────────────────────────────────────────────────────────────
-JWT_SECRET_KEY = config('JWT_SECRET_KEY', default='super-secret-jwt-key')
+JWT_SECRET_KEY = config('JWT_SECRET_KEY', default='super-secret-jwt-key-min-32-bytes!')
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = config('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', default=60, cast=int)
 JWT_ALGORITHM = config('JWT_ALGORITHM', default='HS256')
 

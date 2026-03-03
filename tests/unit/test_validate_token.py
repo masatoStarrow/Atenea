@@ -14,10 +14,10 @@ from src.core.domain.exceptions import TokenExpiredError, TokenInvalidError
 
 @pytest.fixture
 def validate_use_case():
-    return ValidateToken(jwt_secret='test-secret', jwt_algorithm='HS256')
+    return ValidateToken(jwt_secret='test-secret-key-minimum-32-bytes!', jwt_algorithm='HS256')
 
 
-def _make_token(payload, secret='test-secret', algorithm='HS256'):
+def _make_token(payload, secret='test-secret-key-minimum-32-bytes!', algorithm='HS256'):
     return jwt.encode(payload, secret, algorithm=algorithm)
 
 
@@ -71,7 +71,7 @@ class TestValidateToken:
                 'iat': now,
                 'exp': now + 3600,
             },
-            secret='different-secret',
+            secret='wrong-secret-key-minimum-32-bytes!',
         )
 
         with pytest.raises(TokenInvalidError):

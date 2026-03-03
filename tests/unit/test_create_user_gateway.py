@@ -18,7 +18,7 @@ from src.core.domain.exceptions import EmailAlreadyExistsError, ServiceUnavailab
 def _fake_async_runner(coro):
     """Resolve the coroutine synchronously for tests."""
     import asyncio
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────

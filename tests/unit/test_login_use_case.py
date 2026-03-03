@@ -32,7 +32,7 @@ def login_use_case(mock_repository, mock_password_verifier):
     return LoginUser(
         user_repository=mock_repository,
         password_verifier=mock_password_verifier,
-        jwt_secret='test-secret',
+        jwt_secret='test-secret-key-minimum-32-bytes!',
         jwt_algorithm='HS256',
         jwt_expire_minutes=60,
     )
@@ -63,7 +63,7 @@ class TestLoginUseCase:
         assert token_entity.token_type == 'Bearer'
 
         # Decode and verify payload
-        payload = jwt.decode(token_entity.access_token, 'test-secret', algorithms=['HS256'])
+        payload = jwt.decode(token_entity.access_token, 'test-secret-key-minimum-32-bytes!', algorithms=['HS256'])
         assert payload['sub'] == str(sample_user.id)
         assert payload['email'] == 'admin@crm.com'
         assert payload['role'] == 'admin'
@@ -105,7 +105,7 @@ class TestLoginUseCase:
         mock_repository.get_by_email.return_value = sample_user
 
         token_entity = login_use_case.execute('admin@crm.com', 'Temporal123!')
-        payload = jwt.decode(token_entity.access_token, 'test-secret', algorithms=['HS256'])
+        payload = jwt.decode(token_entity.access_token, 'test-secret-key-minimum-32-bytes!', algorithms=['HS256'])
 
         expected_exp = payload['iat'] + (60 * 60)  # 60 minutes
         assert payload['exp'] == expected_exp
