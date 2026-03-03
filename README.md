@@ -49,8 +49,8 @@ src/
 │   │   │   ├── serializers.py
 │   │   │   └── urls.py
 │   │   ├── gateway/                       # Proxy + dual-write hacia microservicios
-│   │   │   ├── views.py                   # UserProxyView (dual-write), InteractionProxyView
-│   │   │   ├── serializers.py             # 6 serializers para Swagger (CreateUser incluye password)
+│   │   │   ├── views.py                   # UserProxyView (dual-write), ClientProxyView (proxy), InteractionProxyView
+│   │   │   ├── serializers.py             # Serializers para Swagger (CreateUser, CreateClient, etc.)
 │   │   │   └── urls.py
 │   │   └── health/                        # GET /api/v1/health/
 │   └── outbound/
@@ -62,6 +62,7 @@ src/
 │       │   ├── django_password_verifier.py
 │       │   └── management/commands/
 │       │       ├── seed_users.py          # ★ Dual-write seed: crea usuarios en Gateway DB + Artemisa
+│       │       ├── seed_clients.py        # Seed clientes → POST directo a Artemisa (no dual-write)
 │       │       └── cleanup_blacklisted_tokens.py  # Limpia tokens expirados de la blacklist
 │       └── http_client/
 │           ├── users_client.py            # httpx async → crm-users-service
@@ -112,6 +113,16 @@ src/
 | PUT | `/api/v1/interactions/{id}/` | admin, soporte |
 | DELETE | `/api/v1/interactions/{id}/` | admin |
 | GET | `/api/v1/interactions/client/{client_id}/` | admin, soporte, comercial |
+
+### Clients — Proxy puro (requieren JWT + rol)
+
+| Método | Ruta | Roles | Descripción |
+|---|---|---|---|
+| GET | `/api/v1/clients/` | admin, soporte, comercial | Listar clientes. Filtro: `status`. Paginación: `page`, `page_size` |
+| POST | `/api/v1/clients/` | admin, soporte | Crear cliente. Campos: `company` (req), `email` (req), `phone`, `status` |
+| GET | `/api/v1/clients/{id}/` | admin, soporte, comercial | Obtener cliente por ID |
+| PUT | `/api/v1/clients/{id}/` | admin, soporte | Actualizar datos del cliente |
+| DELETE | `/api/v1/clients/{id}/` | admin | Soft delete → `status='inactive'` |
 
 ### Health
 
@@ -200,9 +211,15 @@ docker-compose exec gateway python -m pytest tests/ -v
 # Seed de usuarios (dual-write: crea en Gateway DB Y en Artemisa con el mismo UUID)
 # ⚠️  Artemisa debe estar corriendo antes de ejecutar esto
 docker-compose exec gateway python manage.py seed_users
+
+# Seed de clientes (POST directo a Artemisa — no dual-write)
+# ⚠️  Artemisa debe estar corriendo antes de ejecutar esto
+docker-compose exec gateway python manage.py seed_clients
 ```
 
 Usuarios seed: `admin@crm.com`, `soporte@crm.com`, `comercial@crm.com` (password: `Temporal123!`)
+
+Clientes seed: `Acme Corporation`, `Globex Industries`, `Stark Enterprises`, `Wayne Technologies`, `Umbrella Corp`
 
 ---
 
@@ -240,7 +257,8 @@ El script:
 4. Levanta Artemisa + aplica migraciones
 5. Espera a que Artemisa responda en `/health/`
 6. Ejecuta `seed_users` (dual-write: mismo UUID en ambas BDs)
-7. Corre los tests (opcional)
+7. Ejecuta `seed_clients` (POST directo a Artemisa)
+8. Corre los tests (opcional)
 
 ---
 

@@ -162,6 +162,16 @@ seed_users() {
     log_success "Seed completed — users exist in both Gateway DB and Artemisa with matching UUIDs"
 }
 
+# Seed sample clients in Artemisa (no dual-write — clients only live in Artemisa)
+seed_clients() {
+    log_section "STEP 8: SEED CLIENTS (ARTEMISA ONLY)"
+
+    cd "$SCRIPT_DIR"
+    log_info "Running seed_clients management command (POST → Artemisa)..."
+    sudo docker-compose exec -T gateway python manage.py seed_clients
+    log_success "Seed completed — sample clients created in Artemisa"
+}
+
 # Start Artemisa (Users Service)
 start_artemisa() {
     log_section "STEP 6: START ARTEMISA (USERS SERVICE)"
@@ -210,7 +220,7 @@ migrate_artemisa() {
 
 # Run tests
 run_tests() {
-    log_section "STEP 8: RUN TESTS TO VERIFY SYSTEM"
+    log_section "STEP 9: RUN TESTS TO VERIFY SYSTEM"
     
     log_info "Running Atenea tests..."
     cd "$SCRIPT_DIR"
@@ -231,7 +241,7 @@ run_tests() {
 
 # Show system status
 show_status() {
-    log_section "STEP 9: SYSTEM STATUS"
+    log_section "STEP 10: SYSTEM STATUS"
     
     echo -e "${GREEN}🎉 CRM SYSTEM STARTUP COMPLETE! 🎉${NC}"
     echo ""
@@ -258,6 +268,15 @@ show_status() {
     echo "📧 soporte@crm.com    (password: Temporal123! | role: soporte)"
     echo "📧 comercial@crm.com  (password: Temporal123! | role: comercial)"
     echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}🏢 SEED CLIENTS (only in Artemisa)${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "🏢 Acme Corporation       (contacto@acme.com    | active)"
+    echo "🏢 Globex Industries      (info@globex.com      | active)"
+    echo "🏢 Stark Enterprises      (ventas@stark.com     | active)"
+    echo "🏢 Wayne Technologies     (soporte@wayne.com    | inactive)"
+    echo "🏢 Umbrella Corp          (admin@umbrella.com   | active)"
+    echo ""
     echo -e "${GREEN}✅ All services are running and ready!${NC}"
     echo -e "${YELLOW}💡 Use 'sudo docker-compose logs -f [service]' to view logs${NC}"
     echo -e "${YELLOW}💡 Use './startup.sh --help' for more options${NC}"
@@ -282,8 +301,9 @@ show_help() {
     echo "  5. Start Artemisa (Users Service)"
     echo "  6. Run Artemisa migrations"
     echo "  7. Seed users via dual-write (same UUID in both DBs)"
-    echo "  8. Run tests to verify system"
-    echo "  9. Show system status"
+    echo "  8. Seed sample clients in Artemisa"
+    echo "  9. Run tests to verify system"
+    echo " 10. Show system status"
 }
 
 # Main execution
@@ -329,6 +349,7 @@ main() {
     migrate_artemisa
     wait_for_artemisa_api
     seed_users
+    seed_clients
 
     if [ "$skip_tests" = false ]; then
         run_tests
