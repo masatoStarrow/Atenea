@@ -1,0 +1,38 @@
+services:
+  gateway:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: python manage.py runserver 0.0.0.0:8000
+    networks:
+      - default
+      - crm_network
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: crm_gateway_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - gateway_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  gateway_postgres_data:
+
+networks:
+  crm_network:
+    external: true
