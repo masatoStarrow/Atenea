@@ -8,8 +8,8 @@ import time
 import jwt
 import pytest
 
-from src.core.use_cases.validate_token import ValidateToken
-from src.core.domain.exceptions import TokenExpiredError, TokenInvalidError
+from src.application.use_cases.validate_token import ValidateToken
+from src.domain.exceptions import TokenExpiredError, TokenInvalidError
 
 
 @pytest.fixture

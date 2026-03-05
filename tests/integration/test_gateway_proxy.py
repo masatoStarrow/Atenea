@@ -121,7 +121,7 @@ class TestProxyServiceUnavailable:
 
     def test_service_unavailable(self, auth_admin_client):
         """Microservicio caído → Gateway retorna 503."""
-        from src.core.domain.exceptions import ServiceUnavailableError
+        from src.domain.exceptions import ServiceUnavailableError
 
         with patch(
             'src.adapters.outbound.http_client.users_client.UsersServiceClient.forward_request',

@@ -7,11 +7,11 @@ import time
 
 import jwt
 
-from src.core.domain.entities.token import TokenEntity
-from src.core.domain.entities.user import UserEntity
-from src.core.domain.exceptions import InvalidCredentialsError
-from src.core.ports.outbound.user_repository_port import UserRepositoryPort
-from src.core.ports.outbound.password_verifier_port import PasswordVerifierPort
+from src.domain.entities.token import TokenEntity
+from src.domain.entities.user import UserEntity
+from src.domain.exceptions import InvalidCredentialsError
+from src.domain.ports.outbound.user_repository_port import UserRepositoryPort
+from src.domain.ports.outbound.password_verifier_port import PasswordVerifierPort
 
 
 class LoginUser:

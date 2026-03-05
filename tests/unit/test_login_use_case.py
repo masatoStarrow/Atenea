@@ -10,9 +10,9 @@ from uuid import uuid4
 import jwt
 import pytest
 
-from src.core.use_cases.login_user import LoginUser
-from src.core.domain.entities.user import UserEntity
-from src.core.domain.exceptions import InvalidCredentialsError
+from src.application.use_cases.login_user import LoginUser
+from src.domain.entities.user import UserEntity
+from src.domain.exceptions import InvalidCredentialsError
 
 
 @pytest.fixture

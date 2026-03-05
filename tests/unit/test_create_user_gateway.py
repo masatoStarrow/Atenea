@@ -8,9 +8,9 @@ from uuid import UUID
 
 import pytest
 
-from src.core.use_cases.create_user_gateway import CreateUserGateway
-from src.core.domain.entities.user import UserEntity
-from src.core.domain.exceptions import EmailAlreadyExistsError, ServiceUnavailableError
+from src.application.use_cases.create_user_gateway import CreateUserGateway
+from src.domain.entities.user import UserEntity
+from src.domain.exceptions import EmailAlreadyExistsError, ServiceUnavailableError
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────

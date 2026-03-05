@@ -62,7 +62,7 @@ class TestDualWriteCreateUser:
 
     def test_create_user_rollback_on_remote_failure(self, auth_admin_client):
         """If remote returns error, gateway DB record is deleted (rollback)."""
-        from src.core.domain.exceptions import ServiceUnavailableError
+        from src.domain.exceptions import ServiceUnavailableError
 
         with patch(
             'src.adapters.outbound.http_client.users_client.UsersServiceClient.forward_request',

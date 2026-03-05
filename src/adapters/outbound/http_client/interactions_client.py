@@ -8,7 +8,7 @@ import uuid
 import httpx
 from django.conf import settings
 
-from src.core.domain.exceptions import ServiceUnavailableError
+from src.domain.exceptions import ServiceUnavailableError
 
 
 class InteractionsServiceClient:

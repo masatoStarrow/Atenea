@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 from uuid import UUID
 
-from src.core.domain.entities.user import UserEntity
+from src.domain.entities.user import UserEntity
 
 
 class UserRepositoryPort(ABC):

@@ -5,7 +5,7 @@ Defines the contract for the authentication use case.
 
 from abc import ABC, abstractmethod
 
-from src.core.domain.entities.token import TokenEntity
+from src.domain.entities.token import TokenEntity
 
 
 class AuthServicePort(ABC):
