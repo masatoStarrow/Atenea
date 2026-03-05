@@ -30,8 +30,8 @@ from src.infrastructure.permissions.role_permission import RolePermission
 from src.adapters.outbound.http_client.users_client import UsersServiceClient
 from src.adapters.outbound.http_client.interactions_client import InteractionsServiceClient
 from src.adapters.outbound.persistence.django_user_repository import DjangoUserRepository
-from src.core.use_cases.create_user_gateway import CreateUserGateway
-from src.core.domain.exceptions import (
+from src.application.use_cases.create_user_gateway import CreateUserGateway
+from src.domain.exceptions import (
     ServiceUnavailableError,
     EmailAlreadyExistsError,
 )

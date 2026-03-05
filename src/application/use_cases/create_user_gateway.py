@@ -12,11 +12,11 @@ import uuid as uuid_mod
 
 import structlog
 
-from src.core.domain.exceptions import (
+from src.domain.exceptions import (
     EmailAlreadyExistsError,
     ServiceUnavailableError,
 )
-from src.core.ports.outbound.user_repository_port import UserRepositoryPort
+from src.domain.ports.outbound.user_repository_port import UserRepositoryPort
 
 
 logger = structlog.get_logger(__name__)

@@ -5,7 +5,7 @@ Uses Django's check_password which supports all configured hashers.
 
 from django.contrib.auth.hashers import check_password
 
-from src.core.ports.outbound.password_verifier_port import PasswordVerifierPort
+from src.domain.ports.outbound.password_verifier_port import PasswordVerifierPort
 
 
 class DjangoPasswordVerifier(PasswordVerifierPort):

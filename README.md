@@ -1,285 +1,426 @@
 # Atenea — CRM API Gateway
 
-Punto de entrada único del CRM empresarial. Autenticación JWT, autorización por roles, rate limiting, logging estructurado y **dual-write** de usuarios hacia el microservicio de usuarios.
+Punto de entrada único del CRM empresarial. **Toda petición del frontend pasa por aquí.** Se encarga de:
+
+- **Autenticación** — Login con email + password → JWT token
+- **Autorización** — Permisos por rol (admin, soporte, comercial) en cada endpoint
+- **Rate limiting** — 5 req/min para login, 100 req/min para API
+- **Proxy** — Reenvía peticiones a los microservicios internos (Artemisa, Venus)
+- **Dual-write** — Al crear usuarios, guarda en su BD local (con password) Y en Artemisa (sin password), usando el mismo UUID
+- **Logging estructurado** — Trazabilidad completa request/response con structlog
+
+---
+
+## Tabla de contenidos
+
+- [Stack tecnológico](#stack-tecnológico)
+- [¿Por qué Clean Architecture (Bancolombia)?](#por-qué-clean-architecture-bancolombia)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Flujo de autenticación](#flujo-de-autenticación)
+- [Flujo Dual-Write](#flujo-dual-write-creación-de-usuario)
+- [Endpoints](#endpoints)
+- [Permisos por rol](#permisos-por-rol)
+- [Middleware stack](#middleware-stack)
+- [Excepciones de dominio](#excepciones-de-dominio)
+- [Docker](#docker)
+- [Tests](#tests)
+- [CORS](#cors-acceso-desde-el-frontend)
+- [Script de inicio automático](#script-de-inicio-automático)
+- [Documentación API (Swagger)](#documentación-api-swagger)
 
 ---
 
 ## Stack tecnológico
 
-| Componente | Tecnología |
-|---|---|
-| Framework | Django 6.0.2 + Django REST Framework |
-| Lenguaje | Python 3.13 |
-| Base de datos | PostgreSQL 15 |
-| Autenticación | PyJWT (access token HS256) |
-| HTTP Client | httpx 0.28 (async) |
-| CORS | django-cors-headers 4.7.0 |
-| Documentación | drf-spectacular (Swagger UI + ReDoc) |
-| Logging | structlog (JSON estructurado) |
-| Testing | pytest + pytest-django |
-| Containerización | Docker + docker-compose |
+| Componente | Tecnología | Versión |
+|---|---|---|
+| Framework | Django + Django REST Framework | 6.0.2 + 3.16.1 |
+| Lenguaje | Python | 3.13 |
+| Base de datos | PostgreSQL | 15 |
+| Autenticación | PyJWT (HS256) | Access tokens |
+| HTTP Client | httpx (async) | 0.28 |
+| CORS | django-cors-headers | 4.7.0 |
+| Documentación | drf-spectacular | Swagger UI + ReDoc |
+| Logging | structlog | JSON estructurado |
+| Testing | pytest + pytest-django | — |
+| Containerización | Docker + docker-compose | — |
 
 ---
 
-## Arquitectura hexagonal
+## ¿Por qué Clean Architecture (Bancolombia)?
+
+Este proyecto sigue los principios de [**Clean Architecture propuestos por Bancolombia**](https://bancolombia.github.io/scaffold-clean-architecture/docs/intro), adaptados de Java/Gradle a Python/Django.
+
+### Motivación
+
+1. **Regla de dependencia:** las capas internas (dominio, aplicación) **no importan Django, DRF ni ningún framework**. Si mañana cambiamos Django por Flask, solo se reescriben los adaptadores — la lógica de autenticación queda intacta.
+2. **Testabilidad:** los casos de uso (`login_user`, `validate_token`, `create_user_gateway`) se prueban con mocks puros — sin necesidad de levantar Django ni base de datos.
+3. **Separación de responsabilidades:** las vistas de DRF solo traducen HTTP → caso de uso → respuesta HTTP. No contienen lógica de negocio.
+4. **Escalabilidad del equipo:** diferentes personas pueden trabajar en middleware, vistas proxy y casos de uso sin pisarse.
+
+### Mapeo Bancolombia → Python/Django
+
+| Capa Bancolombia | Módulo Bancolombia | Nuestro equivalente | Qué contiene |
+|---|---|---|---|
+| **Domain** | `model` | `src/domain/` | Entidades (Token, User), puertos (ABCs), excepciones |
+| **Domain** | `usecase` | `src/application/` | Casos de uso: login, validate_token, create_user_gateway |
+| **Infrastructure** | `entry-points` | `src/adapters/inbound/` | Vistas DRF (auth, gateway, health), serializers |
+| **Infrastructure** | `driven-adapters` | `src/adapters/outbound/` | Repos Django ORM, password verifier, httpx clients, management commands |
+| **Infrastructure** | `helpers` | `src/infrastructure/` | Middleware (JWT, rate limit, logging), permisos, DI, logging |
+| **Application** | `app-service` | `manage.py` + `config/` | Entry point Django, settings por ambiente |
+
+### Diagrama de capas
 
 ```
-src/
-├── core/                                  # DOMINIO — cero imports de frameworks
-│   ├── domain/
-│   │   ├── entities/
-│   │   │   ├── token.py                   # TokenEntity: access_token, token_type
-│   │   │   └── user.py                    # UserEntity: id, email, full_name, role, is_active, password_hash
-│   │   └── exceptions.py                  # 7 excepciones de dominio (ver tabla abajo)
-│   ├── ports/
-│   │   ├── inbound/
-│   │   │   └── auth_service_port.py       # ABC login
-│   │   └── outbound/
-│   │       ├── password_verifier_port.py  # ABC verify password
-│   │       └── user_repository_port.py    # ABC: get_by_email, get_by_id, create, update, deactivate, delete_by_id
-│   └── use_cases/
-│       ├── login_user.py                  # Buscar user → verificar password → emitir JWT
-│       ├── validate_token.py              # Decodificar y validar JWT
-│       └── create_user_gateway.py         # ★ Dual-write: Gateway DB + users-service
-│
-├── adapters/
-│   ├── inbound/http/
-│   │   ├── auth/                          # POST /login, POST /logout, GET /me
-│   │   │   ├── views.py
-│   │   │   ├── serializers.py
-│   │   │   └── urls.py
-│   │   ├── gateway/                       # Proxy + dual-write hacia microservicios
-│   │   │   ├── views.py                   # UserProxyView (dual-write), ClientProxyView (proxy), InteractionProxyView
-│   │   │   ├── serializers.py             # Serializers para Swagger (CreateUser, CreateClient, etc.)
-│   │   │   └── urls.py
-│   │   └── health/                        # GET /api/v1/health/
-│   └── outbound/
-│       ├── persistence/
-│       │   ├── models/
-│       │   │   ├── user_model.py          # Django User (AbstractBaseUser, UUID PK)
-│       │   │   └── blacklisted_token_model.py
-│       │   ├── django_user_repository.py  # CRUD completo con structlog
-│       │   ├── django_password_verifier.py
-│       │   └── management/commands/
-│       │       ├── seed_users.py          # ★ Dual-write seed: crea usuarios en Gateway DB + Artemisa
-│       │       ├── seed_clients.py        # Seed clientes → POST directo a Artemisa (no dual-write)
-│       │       └── cleanup_blacklisted_tokens.py  # Limpia tokens expirados de la blacklist
-│       └── http_client/
-│           ├── users_client.py            # httpx async → crm-users-service
-│           └── interactions_client.py     # httpx async → crm-interactions-service
-│
-└── infrastructure/
-    ├── middleware/
-    │   ├── jwt_middleware.py              # Valida Bearer token en cada request
-    │   ├── jwt_authentication.py          # DRF Authentication backend
-    │   ├── rate_limit_middleware.py        # Rate limiting por IP/usuario
-    │   └── logging_middleware.py           # Log estructurado request/response
-    ├── permissions/
-    │   ├── role_permissions.py            # Tabla centralizada ROUTE_PERMISSIONS
-    │   └── role_permission.py             # DRF BasePermission
-    ├── logging/setup.py
-    └── di/container.py                    # Inyección de dependencias
+┌─────────────────────────────────────────────────────────┐
+│              manage.py + config/settings/                │  ← Entry point
+├─────────────────────────────────────────────────────────┤
+│  infrastructure/                                        │  ← Middleware stack
+│  (JWT, rate limit, logging, permisos)                   │
+├─────────────────────────────────────────────────────────┤
+│  adapters/inbound/    │    adapters/outbound/           │  ← Frameworks
+│  (vistas DRF)         │    (Django ORM, httpx)          │
+├───────────────────────┴─────────────────────────────────┤
+│                  application/                            │  ← Python puro
+│          (casos de uso: login, validate, dual-write)     │
+├─────────────────────────────────────────────────────────┤
+│                    domain/                               │  ← Python puro
+│       (entidades, ports, excepciones)                    │
+└─────────────────────────────────────────────────────────┘
+         Las flechas de dependencia apuntan hacia adentro →
 ```
 
 ---
 
-## Endpoints
+## Estructura del proyecto
 
-### Auth (públicos)
+```
+Atenea/
+├── manage.py                       # Entry point Django
+├── startup.sh                      # Script que levanta TODO el sistema CRM
+├── config/
+│   ├── urls.py                     # URL routing principal: auth, gateway, health, docs
+│   ├── asgi.py / wsgi.py           # Interfaces ASGI/WSGI
+│   └── settings/
+│       ├── base.py                 # Settings compartidos: JWT, DRF, middleware stack, BD
+│       ├── local.py                # Settings para desarrollo local (DEBUG=True)
+│       ├── production.py           # Settings para producción
+│       └── test.py                 # Settings para tests (SQLite en memoria)
+│
+├── src/
+│   │
+│   ├── domain/                     # 🟢 CAPA DOMINIO — Python puro, CERO frameworks
+│   │   │
+│   │   ├── entities/               # Representan los conceptos principales
+│   │   │   ├── token.py            #   → TokenEntity: access_token, token_type="Bearer"
+│   │   │   └── user.py             #   → UserEntity: id, email, full_name, role, is_active,
+│   │   │                           #                  password_hash (solo aquí se guarda password)
+│   │   │
+│   │   ├── ports/                  # Contratos (interfaces ABC) — definen QUÉ se puede hacer
+│   │   │   ├── inbound/
+│   │   │   │   └── auth_service_port.py  # → ABC: login(email, password) → Token
+│   │   │   └── outbound/
+│   │   │       ├── user_repository_port.py    # → ABC: get_by_email, get_by_id, create,
+│   │   │       │                              #   update, deactivate, delete_by_id (rollback)
+│   │   │       └── password_verifier_port.py  # → ABC: verify(plain, hash) → bool
+│   │   │
+│   │   └── exceptions.py          # 7 excepciones de dominio (ver tabla abajo)
+│   │
+│   ├── application/                # 🔵 CAPA APLICACIÓN — Python puro, orquesta la lógica
+│   │   └── use_cases/
+│   │       ├── login_user.py           # → Buscar user → verificar password → emitir JWT
+│   │       ├── validate_token.py       # → Decodificar JWT (stateless, sin BD)
+│   │       └── create_user_gateway.py  # → ★ Dual-write: Gateway DB (con password)
+│   │                                   #   + POST a Artemisa (sin password). Rollback si falla.
+│   │
+│   ├── adapters/                   # 🟡 CAPA ADAPTADORES — aquí SÍ se usan frameworks
+│   │   │
+│   │   ├── inbound/http/           # === Entry Points (reciben peticiones HTTP) ===
+│   │   │   ├── auth/               # Endpoints de autenticación
+│   │   │   │   ├── views.py        #   → LoginView (POST), LogoutView (POST), MeView (GET)
+│   │   │   │   ├── serializers.py  #   → LoginSerializer, TokenResponseSerializer
+│   │   │   │   └── urls.py         #   → /api/v1/auth/login, /logout, /me
+│   │   │   │
+│   │   │   ├── gateway/            # Proxy + dual-write hacia microservicios
+│   │   │   │   ├── views.py        #   → UserProxyView: ★ dual-write en POST/PUT/DELETE
+│   │   │   │   │                   #   → ClientProxyView: proxy puro a Artemisa
+│   │   │   │   │                   #   → InteractionProxyView: proxy puro a Venus
+│   │   │   │   ├── serializers.py  #   → Serializers para documentación Swagger
+│   │   │   │   └── urls.py         #   → /api/v1/users/, /clients/, /interactions/
+│   │   │   │
+│   │   │   ├── health/             # Health check
+│   │   │   │   ├── views.py        #   → GET /api/v1/health/
+│   │   │   │   └── urls.py
+│   │   │   │
+│   │   │   ├── exception_handler.py # → Handler global: DomainException → JSON response
+│   │   │   └── validators.py       # → Validaciones compartidas de entrada
+│   │   │
+│   │   └── outbound/               # === Driven Adapters (acceden a BD y servicios externos) ===
+│   │       ├── persistence/
+│   │       │   ├── models/
+│   │       │   │   ├── user_model.py              # → Django User (AbstractBaseUser, UUID PK)
+│   │       │   │   └── blacklisted_token_model.py # → Tokens invalidados (logout)
+│   │       │   ├── django_user_repository.py      # → CRUD completo con structlog
+│   │       │   ├── django_password_verifier.py    # → Verifica bcrypt hash
+│   │       │   └── management/commands/
+│   │       │       ├── seed_users.py              # → ★ Dual-write seed: crea usuarios en
+│   │       │       │                              #   Gateway DB + Artemisa (mismo UUID)
+│   │       │       ├── seed_clients.py            # → Seed clientes: POST directo a Artemisa
+│   │       │       └── cleanup_blacklisted_tokens.py # → Limpia tokens expirados
+│   │       │
+│   │       └── http_client/        # Clientes HTTP hacia microservicios internos
+│   │           ├── users_client.py       # → httpx async → Artemisa (port 8001)
+│   │           └── interactions_client.py # → httpx async → Venus (port 8002)
+│   │
+│   └── infrastructure/             # 🟠 HELPERS — utilidades transversales
+│       ├── middleware/
+│       │   ├── jwt_middleware.py         # → Valida Bearer token en cada request
+│       │   │                            #   Public paths: /auth/login, /health/, /docs/
+│       │   ├── jwt_authentication.py    # → DRF Authentication backend
+│       │   ├── rate_limit_middleware.py  # → Rate limiting: 5/min login, 100/min API
+│       │   └── logging_middleware.py     # → Log estructurado request/response
+│       ├── permissions/
+│       │   ├── role_permissions.py  # → ★ Tabla centralizada ROUTE_PERMISSIONS
+│       │   │                        #   (método, recurso) → [roles permitidos]
+│       │   └── role_permission.py   # → DRF BasePermission que consulta la tabla
+│       ├── logging/
+│       │   └── setup.py            #   → Configuración structlog (JSON)
+│       └── di/
+│           └── container.py        #   → Fábricas DI: get_login_use_case(), get_validate_token_use_case()
+│
+└── tests/
+    ├── conftest.py                 # Fixtures: usuarios por rol, tokens JWT, API clients
+    ├── unit/
+    │   ├── test_login_use_case.py       #  5 tests — login: happy path, credenciales inválidas
+    │   ├── test_validate_token.py       #  5 tests — tokens válidos/expirados/malformados
+    │   └── test_create_user_gateway.py  #  6 tests — dual-write: happy path, rollback, UUID match
+    └── integration/
+        ├── test_auth_endpoints.py       #  7 tests — login, logout, me via HTTP
+        ├── test_gateway_proxy.py        # 13 tests — permisos, headers, proxy, tokens
+        ├── test_dual_write.py           # 12 tests — create/update/delete con dual-write
+        └── test_client_endpoints.py     # 26 tests — CRUD clientes, permisos, filtros
+```
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| POST | `/api/v1/auth/login` | Login con email + password → JWT token |
-| POST | `/api/v1/auth/logout` | Invalida token (blacklist) |
-| GET | `/api/v1/auth/me` | Perfil del usuario autenticado |
+### ¿Qué hace cada capa? (explicación rápida)
 
-### Users — Dual-Write (requieren JWT + rol)
-
-| Método | Ruta | Descripción | Comportamiento |
+| Capa | Carpeta | ¿Importa frameworks? | Responsabilidad |
 |---|---|---|---|
-| GET | `/api/v1/users/` | Listar usuarios | Proxy puro → users-service |
-| POST | `/api/v1/users/` | Crear usuario | **Dual-write**: Gateway DB (con password) + users-service (sin password). Mismo UUID. Rollback si falla. |
-| GET | `/api/v1/users/{id}/` | Obtener usuario | Proxy puro → users-service |
-| PUT | `/api/v1/users/{id}/` | Actualizar usuario | **Dual-write**: actualiza Gateway DB + proxy a users-service |
-| DELETE | `/api/v1/users/{id}/` | Eliminar usuario | **Dual-write**: desactiva en Gateway DB + proxy DELETE a users-service |
+| **Dominio** | `src/domain/` | ❌ Python puro | Define qué es un token, qué es un usuario, qué errores de autenticación existen, y qué contratos deben cumplir los repos y servicios |
+| **Aplicación** | `src/application/` | ❌ Python puro | Orquesta: `login_user` busca user → verifica password → emite JWT. `create_user_gateway` hace dual-write con rollback |
+| **Adaptadores** | `src/adapters/` | ✅ DRF, Django ORM, httpx | Vistas HTTP (auth + gateway proxy), repositorios Django, clientes httpx hacia microservicios, management commands |
+| **Infraestructura** | `src/infrastructure/` | ✅ Django middleware | Middleware stack (JWT, rate limit, logging), tabla de permisos por rol, inyección de dependencias |
 
-### Interactions — Proxy puro
+---
 
-| Método | Ruta | Roles |
-|---|---|---|
-| GET | `/api/v1/interactions/` | admin, soporte, comercial |
-| POST | `/api/v1/interactions/` | admin, soporte |
-| GET | `/api/v1/interactions/{id}/` | admin, soporte, comercial |
-| PUT | `/api/v1/interactions/{id}/` | admin, soporte |
-| DELETE | `/api/v1/interactions/{id}/` | admin |
-| GET | `/api/v1/interactions/client/{client_id}/` | admin, soporte, comercial |
+## Flujo de autenticación
 
-### Clients — Proxy puro (requieren JWT + rol)
-
-| Método | Ruta | Roles | Descripción |
-|---|---|---|---|
-| GET | `/api/v1/clients/` | admin, soporte, comercial | Listar clientes. Filtro: `status`. Paginación: `page`, `page_size` |
-| POST | `/api/v1/clients/` | admin, soporte | Crear cliente. Campos: `company` (req), `email` (req), `phone`, `status` |
-| GET | `/api/v1/clients/{id}/` | admin, soporte, comercial | Obtener cliente por ID |
-| PUT | `/api/v1/clients/{id}/` | admin, soporte | Actualizar datos del cliente |
-| DELETE | `/api/v1/clients/{id}/` | admin | Soft delete → `status='inactive'` |
-
-### Health
-
-| Método | Ruta |
-|---|---|
-| GET | `/api/v1/health/` |
+```
+1. Frontend envía POST /api/v1/auth/login  { email, password }
+       │
+2. JWTMiddleware → path es público → deja pasar sin token
+       │
+3. LoginView → llama a LoginUser use case
+       │
+4. LoginUser:
+   a) Busca usuario por email (UserRepository)
+   b) Verifica password (PasswordVerifier → bcrypt)
+   c) Genera JWT con claims: { sub: user_id, email, role, exp }
+   d) Retorna TokenEntity (access_token, token_type="Bearer")
+       │
+5. LoginView → serializa y retorna al frontend
+       │
+6. Frontend guarda el token y lo envía en cada petición:
+   Authorization: Bearer <token>
+       │
+7. JWTMiddleware intercepta:
+   a) Verifica que no esté en blacklist
+   b) Decodifica con ValidateToken use case
+   c) Busca el User en la BD y lo inyecta en request.user
+   d) Inyecta headers internos: X-User-Id, X-User-Role, X-Request-Id
+       │
+8. RolePermission verifica: ¿este rol tiene acceso a este método+recurso?
+       │
+9. La vista proxy reenvía al microservicio interno con los headers
+```
 
 ---
 
 ## Flujo Dual-Write (creación de usuario)
 
+El Gateway es la **única fuente de verdad para passwords**. Cuando se crea un usuario, se guarda en dos bases de datos con el mismo UUID:
+
 ```
-Cliente (Swagger / Frontend)
-    │
-    ▼
 POST /api/v1/users/  { email, full_name, role, password }
-    │
-    ▼
+       │
+       ▼
 ┌─────────────────── API Gateway (Atenea) ───────────────────┐
 │                                                             │
 │  1. Genera UUID compartido                                  │
 │  2. INSERT en Gateway DB (uuid, email, password_hash, role) │
-│  3. POST → users-service  { id: uuid, email, full_name,    │
-│                              role }  (SIN password)         │
-│  4. Si falla → DELETE del registro local (rollback)         │
+│  3. POST → Artemisa: { id: uuid, email, full_name, role }  │
+│     (SIN password)                                          │
+│  4. Si Artemisa falla → DELETE del registro local (rollback)│
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
-    │                                    │
-    ▼                                    ▼
-Gateway DB (PostgreSQL)          Users Service (Artemisa)
- ✔ uuid + password_hash          ✔ mismo uuid, sin password
+       │                                    │
+       ▼                                    ▼
+  Gateway DB (PostgreSQL)           Artemisa (PostgreSQL)
+   ✔ uuid + password_hash           ✔ mismo uuid, sin password
 ```
 
-> **La contraseña NUNCA sale del Gateway.** Solo se almacena como hash en la base de datos local.
+> **La contraseña NUNCA sale del Gateway.** Solo se almacena como hash bcrypt en la BD local de Atenea.
+
+---
+
+## Endpoints
+
+### Auth (públicos — no requieren token)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/v1/auth/login` | Login con email + password → JWT token |
+| `POST` | `/api/v1/auth/logout` | Invalida token (blacklist) |
+| `GET` | `/api/v1/auth/me` | Perfil del usuario autenticado |
+
+### Users — Dual-Write (requieren JWT + rol)
+
+| Método | Ruta | Comportamiento |
+|---|---|---|
+| `GET` | `/api/v1/users/` | Proxy puro → Artemisa |
+| `POST` | `/api/v1/users/` | **Dual-write**: Gateway DB (con password) + Artemisa (sin password). Rollback si falla. |
+| `GET` | `/api/v1/users/{id}/` | Proxy puro → Artemisa |
+| `PUT` | `/api/v1/users/{id}/` | **Dual-write**: actualiza Gateway DB + proxy a Artemisa |
+| `DELETE` | `/api/v1/users/{id}/` | **Dual-write**: desactiva en Gateway DB + proxy DELETE a Artemisa |
+
+### Clients — Proxy puro (requieren JWT + rol)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/clients/` | Listar clientes. Filtro: `status`. Paginación: `page`, `page_size` |
+| `POST` | `/api/v1/clients/` | Crear cliente. Campos: `company` (req), `email` (req), `phone`, `status` |
+| `GET` | `/api/v1/clients/{id}/` | Obtener cliente por ID |
+| `PUT` | `/api/v1/clients/{id}/` | Actualizar datos del cliente |
+| `DELETE` | `/api/v1/clients/{id}/` | Soft delete → `status='inactive'` |
+
+### Interactions — Proxy puro (requieren JWT + rol)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/interactions/` | Listar interacciones |
+| `POST` | `/api/v1/interactions/` | Crear interacción |
+| `GET` | `/api/v1/interactions/{id}/` | Obtener interacción por ID |
+| `PUT` | `/api/v1/interactions/{id}/` | Actualizar interacción |
+| `DELETE` | `/api/v1/interactions/{id}/` | Eliminar interacción |
+| `GET` | `/api/v1/interactions/client/{client_id}/` | Interacciones de un cliente |
+
+### Health
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/v1/health/` | Estado del servicio |
 
 ---
 
 ## Permisos por rol
 
-Tabla centralizada en `src/infrastructure/permissions/role_permissions.py`:
+Tabla centralizada en `src/infrastructure/permissions/role_permissions.py`. **Un solo lugar para cambiar permisos:**
 
 | Recurso | GET | POST | PUT | DELETE |
 |---|---|---|---|---|
-| users | admin, soporte | admin | admin | admin |
-| clients | todos | admin, soporte | admin, soporte | admin |
-| interactions | todos | admin, soporte | admin, soporte | admin |
+| **users** | admin, soporte | admin | admin | admin |
+| **clients** | todos | admin, soporte | admin, soporte | admin |
+| **interactions** | todos | admin, soporte | admin, soporte | admin |
+
+---
+
+## Middleware stack
+
+Cada request pasa por estos middlewares **en orden**:
+
+```
+Request del frontend
+    │
+    ▼
+1. LoggingMiddleware      → Registra request entrante + response saliente (structlog JSON)
+    │
+    ▼
+2. RateLimitMiddleware    → Limita: 5 req/min para /auth/login, 100 req/min para API
+    │                       (por IP, en memoria — usar Redis en producción)
+    │
+    ▼
+3. JWTMiddleware          → Valida Bearer token. Si no hay token o es inválido → 401
+    │                       Rutas públicas: /auth/login, /health/, /docs/, /admin/
+    │                       Verifica blacklist (tokens invalidados por logout)
+    │                       Inyecta: request.user, request.auth_token
+    │
+    ▼
+4. RolePermission (DRF)   → Verifica (método, recurso) contra ROUTE_PERMISSIONS
+    │
+    ▼
+5. Vista DRF              → Ejecuta la lógica (auth o proxy)
+```
 
 ---
 
 ## Excepciones de dominio
 
-| Excepción | Código | HTTP |
-|---|---|---|
-| `InvalidCredentialsError` | `INVALID_CREDENTIALS` | 401 |
-| `TokenExpiredError` | `TOKEN_EXPIRED` | 401 |
-| `TokenInvalidError` | `TOKEN_INVALID` | 401 |
-| `UnauthorizedError` | `UNAUTHORIZED` | 403 |
-| `EmailAlreadyExistsError` | `EMAIL_ALREADY_EXISTS` | 409 |
-| `UserNotFoundError` | `USER_NOT_FOUND` | 404 |
-| `ServiceUnavailableError` | `SERVICE_UNAVAILABLE` | 503 |
-
----
-
-## Documentación API (Swagger)
-
-| URL | Tipo |
-|---|---|
-| `/api/docs/` | Swagger UI |
-| `/api/redoc/` | ReDoc |
-| `/api/schema/` | OpenAPI JSON/YAML |
+| Excepción | Código | HTTP | Cuándo |
+|---|---|---|---|
+| `InvalidCredentialsError` | `INVALID_CREDENTIALS` | 401 | Email o password incorrectos |
+| `TokenExpiredError` | `TOKEN_EXPIRED` | 401 | JWT expiró |
+| `TokenInvalidError` | `TOKEN_INVALID` | 401 | JWT malformado o firm inválida |
+| `UnauthorizedError` | `UNAUTHORIZED` | 403 | Rol sin permiso para este recurso |
+| `EmailAlreadyExistsError` | `EMAIL_ALREADY_EXISTS` | 409 | Email ya registrado |
+| `UserNotFoundError` | `USER_NOT_FOUND` | 404 | No existe usuario con ese ID |
+| `ServiceUnavailableError` | `SERVICE_UNAVAILABLE` | 503 | Microservicio interno no responde |
 
 ---
 
 ## Docker
 
-```bash
-# Levantar
-docker-compose up -d --build
+### Levantar el servicio
 
+```bash
+# Opción 1: levantar todo el CRM con un solo comando (recomendado)
+./startup.sh
+
+# Opción 2: levantar solo Atenea
+docker-compose up -d --build
+```
+
+### Comandos útiles
+
+```bash
 # Migraciones
 docker-compose exec gateway python manage.py migrate
 
 # Tests
 docker-compose exec gateway python -m pytest tests/ -v
 
-# Seed de usuarios (dual-write: crea en Gateway DB Y en Artemisa con el mismo UUID)
-# ⚠️  Artemisa debe estar corriendo antes de ejecutar esto
+# Seed de usuarios (dual-write → mismos UUIDs en Atenea y Artemisa)
+# ⚠️  Artemisa debe estar corriendo
 docker-compose exec gateway python manage.py seed_users
 
-# Seed de clientes (POST directo a Artemisa — no dual-write)
-# ⚠️  Artemisa debe estar corriendo antes de ejecutar esto
+# Seed de clientes (POST directo a Artemisa)
+# ⚠️  Artemisa debe estar corriendo
 docker-compose exec gateway python manage.py seed_clients
+
+# Limpiar tokens expirados de la blacklist
+docker-compose exec gateway python manage.py cleanup_blacklisted_tokens
+
+# Logs
+docker-compose logs -f gateway
 ```
 
-Usuarios seed: `admin@crm.com`, `soporte@crm.com`, `comercial@crm.com` (password: `Temporal123!`)
+### Usuarios seed
 
-Clientes seed: `Acme Corporation`, `Globex Industries`, `Stark Enterprises`, `Wayne Technologies`, `Umbrella Corp`
+| Email | Password | Rol |
+|---|---|---|
+| admin@crm.com | Temporal123! | admin |
+| soporte@crm.com | Temporal123! | soporte |
+| comercial@crm.com | Temporal123! | comercial |
 
----
-
-## CORS (acceso desde el frontend)
-
-`django-cors-headers` está configurado para permitir peticiones desde el servidor de desarrollo de Vite por defecto.
-
-| Origen permitido (development) | Puerto |
-|---|---|
-| `http://localhost:5173` | Vite dev server |
-| `http://127.0.0.1:5173` | Vite dev server |
-
-Para agregar más orígenes en producción, usar la variable de entorno:
-```env
-CORS_ALLOWED_ORIGINS=https://mi-frontend.com,https://otro.com
-```
-
----
-
-## Script de inicio automático
-
-Usar `startup.sh` para levantar todo el sistema CRM con un solo comando:
-
-```bash
-cd Atenea
-./startup.sh               # Levanta todo + migraciones + seed + tests
-./startup.sh --skip-tests  # Levanta todo + migraciones + seed (sin tests)
-./startup.sh --help        # Ver todas las opciones
-```
-
-El script:
-1. Limpia contenedores existentes
-2. Crea la red Docker `crm_network`
-3. Levanta Atenea + aplica migraciones
-4. Levanta Artemisa + aplica migraciones
-5. Espera a que Artemisa responda en `/health/`
-6. Ejecuta `seed_users` (dual-write: mismo UUID en ambas BDs)
-7. Ejecuta `seed_clients` (POST directo a Artemisa)
-8. Corre los tests (opcional)
-
----
-
-## Red compartida
-
-Ambos servicios comparten la red Docker `crm_network` para comunicación interna:
-
-```yaml
-networks:
-  crm_network:
-    external: true
-```
-
-```bash
-# Crear la red (una sola vez)
-docker network create crm_network
-```
-
----
-
-## Variables de entorno (.env)
+### Variables de entorno (`.env`)
 
 ```env
 DJANGO_SECRET_KEY=change-me
@@ -292,29 +433,99 @@ DB_PASSWORD=postgres
 DB_HOST=db
 DB_PORT=5432
 
-JWT_SECRET_KEY=super-secret-jwt-key
+JWT_SECRET_KEY=super-secret-jwt-key-min-32-bytes!
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
 JWT_ALGORITHM=HS256
 
 USERS_SERVICE_URL=http://users-service:8001/api/v1
 INTERACTIONS_SERVICE_URL=http://interactions-service:8002
+
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+
+RATE_LIMIT_LOGIN=5/minute
+RATE_LIMIT_API=100/minute
+```
+
+### Red compartida
+
+Ambos servicios comparten la red Docker `crm_network` para comunicación interna:
+
+```bash
+# Crear la red (una sola vez, startup.sh lo hace automáticamente)
+docker network create crm_network
 ```
 
 ---
 
 ## Tests
 
-**48 tests** — 0 failures
+**69 tests** — 0 failures, 0 warnings
 
 ```
 tests/
 ├── conftest.py                          # Fixtures: usuarios por rol, tokens JWT, API clients
 ├── unit/
-│   ├── test_login_use_case.py           # 5 tests — lógica pura de login
-│   ├── test_validate_token.py           # 5 tests — tokens válidos/expirados/malformados
-│   └── test_create_user_gateway.py      # 6 tests — dual-write: happy path, rollback, UUID match
+│   ├── test_login_use_case.py           #  5 tests — login: happy path, credenciales inválidas
+│   ├── test_validate_token.py           #  5 tests — tokens válidos/expirados/malformados
+│   └── test_create_user_gateway.py      #  6 tests — dual-write: happy path, rollback, UUID match
 └── integration/
-    ├── test_auth_endpoints.py           # 7 tests — login, logout, me
+    ├── test_auth_endpoints.py           #  7 tests — login, logout, me via HTTP
     ├── test_gateway_proxy.py            # 13 tests — permisos, headers, proxy, tokens
-    └── test_dual_write.py              # 12 tests — create/update/delete con dual-write
+    ├── test_dual_write.py               # 12 tests — create/update/delete con dual-write
+    └── test_client_endpoints.py         # 21 tests — CRUD clientes, permisos, filtros
 ```
+
+```bash
+# Ejecutar tests localmente (sin Docker) — usa SQLite en memoria
+python -m pytest tests/ -v --color=yes
+```
+
+---
+
+## CORS (acceso desde el frontend)
+
+`django-cors-headers` está configurado para permitir peticiones desde Vite (dev server del frontend Afrodita):
+
+| Origen permitido (development) | Puerto |
+|---|---|
+| `http://localhost:5173` | Vite dev server |
+| `http://127.0.0.1:5173` | Vite dev server |
+
+Para agregar más orígenes en producción:
+```env
+CORS_ALLOWED_ORIGINS=https://mi-frontend.com,https://otro.com
+```
+
+---
+
+## Script de inicio automático
+
+`startup.sh` levanta **todo el sistema CRM** con un solo comando:
+
+```bash
+cd Atenea
+./startup.sh               # Todo: build + migraciones + seed + tests
+./startup.sh --skip-tests  # Sin tests
+./startup.sh --help        # Ver opciones
+```
+
+El script ejecuta estos pasos en orden:
+
+1. Limpia contenedores existentes
+2. Crea la red Docker `crm_network`
+3. Levanta Atenea (gateway) + aplica migraciones Django
+4. Levanta Artemisa (users-service) + aplica migraciones Alembic
+5. Espera a que Artemisa responda en `/api/v1/health/`
+6. Ejecuta `seed_users` (dual-write: mismo UUID en ambas BDs)
+7. Ejecuta `seed_clients` (POST directo a Artemisa)
+8. Corre los tests de ambos servicios (opcional)
+
+---
+
+## Documentación API (Swagger)
+
+| URL | Tipo |
+|---|---|
+| `/api/docs/` | Swagger UI (interactivo) |
+| `/api/redoc/` | ReDoc |
+| `/api/schema/` | Esquema OpenAPI JSON/YAML |

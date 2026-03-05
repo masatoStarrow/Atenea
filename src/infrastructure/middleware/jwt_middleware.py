@@ -7,8 +7,8 @@ Skips public routes (login, health, docs).
 from django.http import JsonResponse
 from django.conf import settings
 
-from src.core.use_cases.validate_token import ValidateToken
-from src.core.domain.exceptions import TokenExpiredError, TokenInvalidError
+from src.application.use_cases.validate_token import ValidateToken
+from src.domain.exceptions import TokenExpiredError, TokenInvalidError
 from src.adapters.outbound.persistence.models.user_model import User
 from src.adapters.outbound.persistence.models.blacklisted_token_model import BlacklistedToken
 

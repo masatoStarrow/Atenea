@@ -14,7 +14,7 @@ import json
 from django.core.management.base import BaseCommand
 
 from src.adapters.outbound.http_client.users_client import UsersServiceClient
-from src.core.domain.exceptions import ServiceUnavailableError
+from src.domain.exceptions import ServiceUnavailableError
 
 
 def _run_async(coro):

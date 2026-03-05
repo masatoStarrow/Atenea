@@ -8,8 +8,8 @@ from uuid import UUID
 
 import structlog
 
-from src.core.domain.entities.user import UserEntity
-from src.core.ports.outbound.user_repository_port import UserRepositoryPort
+from src.domain.entities.user import UserEntity
+from src.domain.ports.outbound.user_repository_port import UserRepositoryPort
 from src.adapters.outbound.persistence.models.user_model import User
 
 logger = structlog.get_logger(__name__)

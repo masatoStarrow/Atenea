@@ -7,7 +7,7 @@ from rest_framework.views import exception_handler
 from rest_framework.response import Response
 from rest_framework import status
 
-from src.core.domain.exceptions import (
+from src.domain.exceptions import (
     DomainException,
     InvalidCredentialsError,
     TokenExpiredError,

@@ -48,7 +48,25 @@ El **CRM API Gateway** es el punto de entrada único para todos los clientes (fr
 
 ## 2. Arquitectura del Proyecto
 
-Se usa **Arquitectura Hexagonal (Ports & Adapters)**. La idea central: el dominio (lógica de negocio) no depende de ningún framework. Django, DRF, httpx son detalles de implementación que viven en los adaptadores.
+Se usa **Clean Architecture** siguiendo los principios del [**scaffold de Bancolombia**](https://bancolombia.github.io/scaffold-clean-architecture/docs/intro), adaptados de Java/Gradle a Python/Django. La idea central: el dominio (lógica de negocio) no depende de ningún framework. Django, DRF, httpx son detalles de implementación que viven en los adaptadores.
+
+### ¿Por qué el scaffold de Bancolombia?
+
+1. **Regla de dependencia estricta:** las capas internas (dominio, aplicación) no importan Django ni DRF. Si mañana cambiamos Django por Flask, solo se reescriben los adaptadores.
+2. **Testabilidad:** los casos de uso (`login_user`, `validate_token`) se prueban con mocks puros — sin BD ni servidor HTTP.
+3. **Separación de responsabilidades:** las vistas DRF solo traducen HTTP ↔ caso de uso. No contienen lógica de negocio.
+4. **Escalabilidad del equipo:** diferentes personas pueden trabajar en middleware, vistas proxy y casos de uso sin conflictos.
+
+### Mapeo Bancolombia → Python/Django
+
+| Capa Bancolombia | Módulo Bancolombia | Nuestro equivalente | Qué contiene |
+|---|---|---|---|
+| **Domain** | `model` | `src/domain/` | Entidades (Token, User), puertos (ABCs), excepciones |
+| **Domain** | `usecase` | `src/application/` | Casos de uso: login, validate_token, create_user_gateway |
+| **Infrastructure** | `entry-points` | `src/adapters/inbound/` | Vistas DRF (auth, gateway, health), serializers |
+| **Infrastructure** | `driven-adapters` | `src/adapters/outbound/` | Repos Django ORM, httpx clients, management commands |
+| **Infrastructure** | `helpers` | `src/infrastructure/` | Middleware, permisos, DI, logging |
+| **Application** | `app-service` | `manage.py` + `config/` | Entry point Django, settings por ambiente |
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -68,7 +86,7 @@ Se usa **Arquitectura Hexagonal (Ports & Adapters)**. La idea central: el domini
 └──────────┬───────────────────────────────┬───────────────┘
            │                               │
 ┌──────────▼──────────┐     ┌──────────────▼───────────────┐
-│    DOMINIO (CORE)   │     │   ADAPTADORES OUTBOUND       │
+│  DOMINIO + APLICACIÓN│     │   ADAPTADORES OUTBOUND       │
 │  Entities (Token,   │     │  DjangoUserRepository        │
 │    User)            │     │  DjangoPasswordVerifier       │
 │  Use Cases (Login,  │     │  UsersServiceClient (httpx)   │
@@ -78,11 +96,12 @@ Se usa **Arquitectura Hexagonal (Ports & Adapters)**. La idea central: el domini
 └─────────────────────┘     └───────────────────────────────┘
 ```
 
-### Las 3 capas
+### Las 4 capas
 
 | Capa | Carpeta | Qué contiene | Importa frameworks? |
 |---|---|---|---|
-| **Dominio (Core)** | `src/core/` | Entidades, excepciones, puertos (ABCs), casos de uso | ❌ Solo Python puro + PyJWT |
+| **Dominio** | `src/domain/` | Entidades, excepciones, puertos (ABCs) | ❌ Solo Python puro |
+| **Aplicación** | `src/application/` | Casos de uso (orquestan dominio + ports) | ❌ Solo Python puro + PyJWT |
 | **Adaptadores** | `src/adapters/` | Views DRF, ORM repositories, HTTP clients | ✅ Django, DRF, httpx |
 | **Infraestructura** | `src/infrastructure/` | Middleware, permisos, logging, inyección de dependencias | ✅ Django, structlog |
 
@@ -565,21 +584,23 @@ Atenea/
 │   └── wsgi.py                          # Entry point WSGI (Gunicorn lo usa en producción)
 │
 ├── src/
-│   ├── core/                            # 🟢 DOMINIO — Python puro, SIN frameworks
-│   │   ├── domain/
-│   │   │   ├── entities/
-│   │   │   │   ├── token.py             # Entidad Token (access_token, token_type)
-│   │   │   │   └── user.py              # Entidad User (id, email, role, password_hash)
-│   │   │   └── exceptions.py            # Excepciones de dominio (InvalidCredentials, etc.)
-│   │   ├── ports/
-│   │   │   ├── inbound/
-│   │   │   │   └── auth_service_port.py # ABC: contrato para autenticación
-│   │   │   └── outbound/
-│   │   │       ├── user_repository_port.py     # ABC: contrato para acceso a usuarios
-│   │   │       └── password_verifier_port.py   # ABC: contrato para verificar contraseñas
+│   ├── domain/                           # 🟢 DOMINIO — Python puro, SIN frameworks
+│   │   ├── entities/
+│   │   │   ├── token.py                 # Entidad Token (access_token, token_type)
+│   │   │   └── user.py                  # Entidad User (id, email, role, password_hash)
+│   │   ├── exceptions.py                # Excepciones de dominio (InvalidCredentials, etc.)
+│   │   └── ports/
+│   │       ├── inbound/
+│   │       │   └── auth_service_port.py  # ABC: contrato para autenticación
+│   │       └── outbound/
+│   │           ├── user_repository_port.py     # ABC: contrato para acceso a usuarios
+│   │           └── password_verifier_port.py   # ABC: contrato para verificar contraseñas
+│   │
+│   ├── application/                      # 🟢 APLICACIÓN — Casos de uso (Python puro)
 │   │   └── use_cases/
-│   │       ├── login_user.py            # Caso de uso: buscar user → verificar password → emitir JWT
-│   │       └── validate_token.py        # Caso de uso: decodificar y validar JWT
+│   │       ├── login_user.py             # Caso de uso: buscar user → verificar password → emitir JWT
+│   │       ├── validate_token.py         # Caso de uso: decodificar y validar JWT
+│   │       └── create_user_gateway.py    # Caso de uso: ★ dual-write (Gateway DB + Artemisa, rollback)
 │   │
 │   ├── adapters/
 │   │   ├── inbound/http/                # 🔵 Adaptadores de entrada (reciben requests HTTP)
@@ -588,8 +609,9 @@ Atenea/
 │   │   │   │   ├── serializers.py       # Validación de request/response
 │   │   │   │   └── urls.py              # /api/v1/auth/*
 │   │   │   ├── gateway/
-│   │   │   │   ├── views.py             # UserProxyView, InteractionProxyView
-│   │   │   │   └── urls.py              # /api/v1/users/*, /api/v1/interactions/*
+│   │   │   │   ├── views.py             # UserProxyView (dual-write), ClientProxyView (proxy), InteractionProxyView
+│   │   │   │   ├── serializers.py       # Serializers para documentación Swagger
+│   │   │   │   └── urls.py              # /api/v1/users/*, /api/v1/clients/*, /api/v1/interactions/*
 │   │   │   ├── health/
 │   │   │   │   ├── views.py             # HealthView
 │   │   │   │   └── urls.py              # /api/v1/health/
@@ -604,7 +626,9 @@ Atenea/
 │   │       │   ├── django_password_verifier.py    # Implementa PasswordVerifierPort con Django
 │   │       │   ├── apps.py                        # Config del app Django
 │   │       │   └── management/commands/
-│   │       │       └── seed_users.py              # Comando: crear usuarios iniciales
+│   │       │       ├── seed_users.py              # Comando: crear usuarios iniciales (dual-write: Gateway + Artemisa)
+│   │       │       ├── seed_clients.py            # Comando: crear clientes iniciales (POST directo a Artemisa)
+│   │       │       └── cleanup_blacklisted_tokens.py # Comando: limpiar tokens expirados de la blacklist
 │   │       └── http_client/
 │   │           ├── users_client.py                # httpx async → users-service
 │   │           └── interactions_client.py         # httpx async → interactions-service

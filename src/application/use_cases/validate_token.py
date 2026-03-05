@@ -5,7 +5,7 @@ Pure domain logic, no framework imports.
 
 import jwt
 
-from src.core.domain.exceptions import TokenExpiredError, TokenInvalidError
+from src.domain.exceptions import TokenExpiredError, TokenInvalidError
 
 
 class ValidateToken:

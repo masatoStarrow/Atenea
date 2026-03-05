@@ -17,7 +17,7 @@ from src.adapters.inbound.http.auth.serializers import (
     SuccessResponseSerializer,
     ErrorResponseSerializer,
 )
-from src.core.domain.exceptions import InvalidCredentialsError
+from src.domain.exceptions import InvalidCredentialsError
 from src.infrastructure.di.container import get_login_use_case, get_validate_token_use_case
 from src.adapters.outbound.persistence.models.blacklisted_token_model import BlacklistedToken
 from src.adapters.outbound.persistence.models.user_model import User

@@ -13,8 +13,8 @@ from django.core.management.base import BaseCommand
 
 from src.adapters.outbound.persistence.django_user_repository import DjangoUserRepository
 from src.adapters.outbound.http_client.users_client import UsersServiceClient
-from src.core.use_cases.create_user_gateway import CreateUserGateway
-from src.core.domain.exceptions import EmailAlreadyExistsError, ServiceUnavailableError
+from src.application.use_cases.create_user_gateway import CreateUserGateway
+from src.domain.exceptions import EmailAlreadyExistsError, ServiceUnavailableError
 
 # Bootstrap UUID used as requester identity during seeding (no real user exists yet)
 BOOTSTRAP_USER_ID = '00000000-0000-0000-0000-000000000000'
