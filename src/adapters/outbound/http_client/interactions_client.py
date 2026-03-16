@@ -56,3 +56,40 @@ class InteractionsServiceClient:
             raise ServiceUnavailableError(
                 message="El servicio de interacciones no está disponible"
             )
+
+    async def forward_file_upload(
+        self,
+        path: str,
+        file_name: str,
+        file_data: bytes,
+        content_type: str,
+        query_params: dict | None = None,
+        user_id: str | None = None,
+        user_role: str | None = None,
+    ) -> httpx.Response:
+        """Forward a multipart file upload to the interactions-service."""
+        url = f"{self.base_url}{path}"
+
+        internal_headers = {
+            'X-Request-Id': str(uuid.uuid4()),
+        }
+        if user_id:
+            internal_headers['X-User-Id'] = user_id
+        if user_role:
+            internal_headers['X-User-Role'] = user_role
+
+        files = {"file": (file_name, file_data, content_type)}
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                response = await client.post(
+                    url=url,
+                    headers=internal_headers,
+                    files=files,
+                    params=query_params,
+                )
+                return response
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
+            raise ServiceUnavailableError(
+                message="El servicio de interacciones no está disponible"
+            )
