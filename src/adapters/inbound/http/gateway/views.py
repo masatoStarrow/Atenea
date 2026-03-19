@@ -444,3 +444,272 @@ class InteractionByClientProxyView(APIView):
             return Response(data, status=response.status_code)
         except ServiceUnavailableError as e:
             return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class InteractionClientSummaryProxyView(APIView):
+    """Proxy for /api/v1/interactions/client/{client_id}/summary/ → interactions-service."""
+    permission_classes = [RolePermission]
+
+    @extend_schema(
+        summary="Resumen de interacciones por cliente",
+        description="Proxy hacia interactions-service GET /interactions/client/{client_id}/summary",
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Interactions (Proxy)"],
+    )
+    def get(self, request: Request, client_id=None) -> Response:
+        client = InteractionsServiceClient()
+        path = f'/interactions/client/{client_id}/summary'
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method='GET',
+                    path=path,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class InteractionMetricsProxyView(APIView):
+    """Proxy for /api/v1/interactions/metrics/ → interactions-service."""
+    permission_classes = [RolePermission]
+
+    @extend_schema(
+        summary="Métricas globales de interacciones",
+        description="Proxy hacia interactions-service GET /interactions/metrics",
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Interactions (Proxy)"],
+    )
+    def get(self, request: Request) -> Response:
+        client = InteractionsServiceClient()
+        path = '/interactions/metrics'
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method='GET',
+                    path=path,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class InteractionFollowUpsProxyView(APIView):
+    """Proxy for /api/v1/interactions/follow-ups/{type}/ → interactions-service."""
+    permission_classes = [RolePermission]
+
+    @extend_schema(
+        summary="Seguimientos (pending / overdue)",
+        description="Proxy hacia interactions-service GET /interactions/follow-ups/{pending|overdue}",
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Interactions (Proxy)"],
+    )
+    def get(self, request: Request, follow_up_type=None) -> Response:
+        client = InteractionsServiceClient()
+        path = f'/interactions/follow-ups/{follow_up_type}'
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method='GET',
+                    path=path,
+                    query_params=request.query_params.dict() if request.query_params else None,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class InteractionCloseProxyView(APIView):
+    """Proxy for /api/v1/interactions/{id}/close/ → interactions-service."""
+    permission_classes = [RolePermission]
+
+    @extend_schema(
+        summary="Cerrar interacción",
+        description="Proxy hacia interactions-service PATCH /interactions/{id}/close",
+        responses={200: SuccessResponseSerializer, 403: ErrorResponseSerializer, 409: ErrorResponseSerializer},
+        tags=["Interactions (Proxy)"],
+    )
+    def patch(self, request: Request, interaction_id=None) -> Response:
+        client = InteractionsServiceClient()
+        path = f'/interactions/{interaction_id}/close'
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method='PATCH',
+                    path=path,
+                    body=request.body if request.body else None,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class InteractionAuditProxyView(APIView):
+    """Proxy for /api/v1/interactions/{id}/audit/ → interactions-service."""
+    permission_classes = [RolePermission]
+
+    @extend_schema(
+        summary="Historial de auditoría de interacción",
+        description="Proxy hacia interactions-service GET /interactions/{id}/audit",
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Interactions (Proxy)"],
+    )
+    def get(self, request: Request, interaction_id=None) -> Response:
+        client = InteractionsServiceClient()
+        path = f'/interactions/{interaction_id}/audit'
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method='GET',
+                    path=path,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class InteractionAttachmentProxyView(APIView):
+    """Proxy for /api/v1/interactions/{id}/attachments/ → interactions-service."""
+    permission_classes = [RolePermission]
+
+    @extend_schema(
+        summary="Listar adjuntos / descargar adjunto",
+        description=(
+            "GET sin attachment_id: lista adjuntos de la interacción. "
+            "GET con attachment_id: obtiene URL de descarga presignada."
+        ),
+        responses={200: SuccessResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Interactions – Attachments (Proxy)"],
+    )
+    def get(self, request: Request, interaction_id=None, attachment_id=None) -> Response:
+        client = InteractionsServiceClient()
+        if attachment_id:
+            path = f'/interactions/{interaction_id}/attachments/{attachment_id}/download'
+        else:
+            path = f'/interactions/{interaction_id}/attachments'
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method='GET',
+                    path=path,
+                    query_params=request.query_params.dict() if request.query_params else None,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    @extend_schema(
+        summary="Subir adjunto a una interacción",
+        description="Proxy hacia interactions-service POST /interactions/{id}/attachments/",
+        responses={201: SuccessResponseSerializer, 413: ErrorResponseSerializer, 415: ErrorResponseSerializer},
+        tags=["Interactions – Attachments (Proxy)"],
+    )
+    def post(self, request: Request, interaction_id=None, **kwargs) -> Response:
+        client = InteractionsServiceClient()
+        path = f'/interactions/{interaction_id}/attachments'
+
+        uploaded_file = request.FILES.get('file')
+        if not uploaded_file:
+            return _error_response("VALIDATION_ERROR", "Se requiere un archivo en 'file'", status.HTTP_400_BAD_REQUEST)
+
+        query_params = request.query_params.dict() if request.query_params else None
+
+        try:
+            response = _run_async(
+                client.forward_file_upload(
+                    path=path,
+                    file_name=uploaded_file.name,
+                    file_data=uploaded_file.read(),
+                    content_type=uploaded_file.content_type or 'application/octet-stream',
+                    query_params=query_params,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    @extend_schema(
+        summary="Eliminar adjunto",
+        description="Proxy hacia interactions-service DELETE /interactions/{id}/attachments/{att_id}",
+        responses={200: SuccessResponseSerializer, 404: ErrorResponseSerializer, 503: ErrorResponseSerializer},
+        tags=["Interactions – Attachments (Proxy)"],
+    )
+    def delete(self, request: Request, interaction_id=None, attachment_id=None) -> Response:
+        client = InteractionsServiceClient()
+        path = f'/interactions/{interaction_id}/attachments/{attachment_id}'
+
+        try:
+            response = _run_async(
+                client.forward_request(
+                    method='DELETE',
+                    path=path,
+                    user_id=str(request.user.id) if hasattr(request.user, 'id') else None,
+                    user_role=getattr(request.user, 'role', None),
+                )
+            )
+            try:
+                data = response.json()
+            except Exception:
+                data = response.text
+            return Response(data, status=response.status_code)
+        except ServiceUnavailableError as e:
+            return _error_response(e.code, e.message, status.HTTP_503_SERVICE_UNAVAILABLE)

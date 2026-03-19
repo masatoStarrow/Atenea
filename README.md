@@ -5,7 +5,7 @@ Punto de entrada único del CRM empresarial. **Toda petición del frontend pasa 
 - **Autenticación** — Login con email + password → JWT token
 - **Autorización** — Permisos por rol (admin, soporte, comercial) en cada endpoint
 - **Rate limiting** — 5 req/min para login, 100 req/min para API
-- **Proxy** — Reenvía peticiones a los microservicios internos (Artemisa, Venus)
+- **Proxy** — Reenvía peticiones a los microservicios internos (Artemisa para usuarios/clientes, Venus para interacciones)
 - **Dual-write** — Al crear usuarios, guarda en su BD local (con password) Y en Artemisa (sin password), usando el mismo UUID
 - **Logging estructurado** — Trazabilidad completa request/response con structlog
 
@@ -144,9 +144,15 @@ Atenea/
 │   │   │   ├── gateway/            # Proxy + dual-write hacia microservicios
 │   │   │   │   ├── views.py        #   → UserProxyView: ★ dual-write en POST/PUT/DELETE
 │   │   │   │   │                   #   → ClientProxyView: proxy puro a Artemisa
-│   │   │   │   │                   #   → InteractionProxyView: proxy puro a Venus
+│   │   │   │   │                   #   → InteractionProxyView: proxy puro a Venus (CRUD)
+│   │   │   │   │                   #   → InteractionMetricsProxyView: métricas globales
+│   │   │   │   │                   #   → InteractionClientSummaryProxyView: resumen por cliente
+│   │   │   │   │                   #   → InteractionFollowUpsProxyView: seguimientos
+│   │   │   │   │                   #   → InteractionCloseProxyView: cerrar interacción
+│   │   │   │   │                   #   → InteractionAuditProxyView: historial de cambios
+│   │   │   │                   #   → InteractionAttachmentProxyView: adjuntos (upload, list, download, delete)
 │   │   │   │   ├── serializers.py  #   → Serializers para documentación Swagger
-│   │   │   │   └── urls.py         #   → /api/v1/users/, /clients/, /interactions/
+│   │   │   │   └── urls.py         #   → /api/v1/users/, /clients/, /interactions/*
 │   │   │   │
 │   │   │   ├── health/             # Health check
 │   │   │   │   ├── views.py        #   → GET /api/v1/health/
@@ -166,6 +172,7 @@ Atenea/
 │   │       │       ├── seed_users.py              # → ★ Dual-write seed: crea usuarios en
 │   │       │       │                              #   Gateway DB + Artemisa (mismo UUID)
 │   │       │       ├── seed_clients.py            # → Seed clientes: POST directo a Artemisa
+│   │       │       ├── seed_interactions.py       # → Seed interacciones: POST directo a Venus
 │   │       │       └── cleanup_blacklisted_tokens.py # → Limpia tokens expirados
 │   │       │
 │   │       └── http_client/        # Clientes HTTP hacia microservicios internos
@@ -302,16 +309,25 @@ POST /api/v1/users/  { email, full_name, role, password }
 | `PUT` | `/api/v1/clients/{id}/` | Actualizar datos del cliente |
 | `DELETE` | `/api/v1/clients/{id}/` | Soft delete → `status='inactive'` |
 
-### Interactions — Proxy puro (requieren JWT + rol)
+### Interactions — Proxy puro hacia Venus (requieren JWT + rol)
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| `GET` | `/api/v1/interactions/` | Listar interacciones |
+| `GET` | `/api/v1/interactions/` | Listar interacciones (filtros, paginación) |
 | `POST` | `/api/v1/interactions/` | Crear interacción |
+| `GET` | `/api/v1/interactions/metrics/` | Métricas globales (totales + desglose por cliente) |
+| `GET` | `/api/v1/interactions/follow-ups/{pending\|overdue}/` | Seguimientos pendientes o vencidos |
+| `GET` | `/api/v1/interactions/client/{client_id}/` | Historial de interacciones de un cliente |
+| `GET` | `/api/v1/interactions/client/{client_id}/summary/` | Resumen estadístico del cliente |
 | `GET` | `/api/v1/interactions/{id}/` | Obtener interacción por ID |
 | `PUT` | `/api/v1/interactions/{id}/` | Actualizar interacción |
-| `DELETE` | `/api/v1/interactions/{id}/` | Eliminar interacción |
-| `GET` | `/api/v1/interactions/client/{client_id}/` | Interacciones de un cliente |
+| `DELETE` | `/api/v1/interactions/{id}/` | Eliminar interacción (soft delete) |
+| `PATCH` | `/api/v1/interactions/{id}/close/` | Cerrar interacción |
+| `GET` | `/api/v1/interactions/{id}/audit/` | Historial de cambios de una interacción |
+| `POST` | `/api/v1/interactions/{id}/attachments/` | Subir adjunto (multipart proxy → Venus) |
+| `GET` | `/api/v1/interactions/{id}/attachments/` | Listar adjuntos de una interacción |
+| `GET` | `/api/v1/interactions/{id}/attachments/{att_id}/` | URL presignada de descarga |
+| `DELETE` | `/api/v1/interactions/{id}/attachments/{att_id}/` | Eliminar adjunto (S3 + BD) |
 
 ### Health
 
@@ -404,6 +420,10 @@ docker-compose exec gateway python manage.py seed_users
 # Seed de clientes (POST directo a Artemisa)
 # ⚠️  Artemisa debe estar corriendo
 docker-compose exec gateway python manage.py seed_clients
+
+# Seed de interacciones (POST directo a Venus)
+# ⚠️  Venus y Artemisa deben estar corriendo (necesita UUIDs de clientes y usuarios)
+docker-compose exec gateway python manage.py seed_interactions
 
 # Limpiar tokens expirados de la blacklist
 docker-compose exec gateway python manage.py cleanup_blacklisted_tokens
@@ -516,9 +536,12 @@ El script ejecuta estos pasos en orden:
 3. Levanta Atenea (gateway) + aplica migraciones Django
 4. Levanta Artemisa (users-service) + aplica migraciones Alembic
 5. Espera a que Artemisa responda en `/api/v1/health/`
-6. Ejecuta `seed_users` (dual-write: mismo UUID en ambas BDs)
-7. Ejecuta `seed_clients` (POST directo a Artemisa)
-8. Corre los tests de ambos servicios (opcional)
+6. Levanta Venus (interactions-service) + aplica migraciones Alembic
+7. Espera a que Venus responda en `/api/v1/health/`
+8. Ejecuta `seed_users` (dual-write: mismo UUID en ambas BDs)
+9. Ejecuta `seed_clients` (POST directo a Artemisa)
+10. Ejecuta `seed_interactions` (POST directo a Venus)
+11. Corre los tests de los tres servicios (opcional)
 
 ---
 

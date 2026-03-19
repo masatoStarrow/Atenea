@@ -6,8 +6,9 @@
 # Este script levanta todo el sistema CRM en orden:
 # 1. API Gateway (Atenea) 
 # 2. Users Service (Artemisa)
-# 3. Migraciones de bases de datos
-# 4. Seed de datos de prueba
+# 3. Interactions Service (Venus)
+# 4. Migraciones de bases de datos
+# 5. Seed de datos de prueba
 # =============================================================================
 
 set -e  # Exit on any error
@@ -15,6 +16,7 @@ set -e  # Exit on any error
 # Resolve script directory (works regardless of where the script is called from)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ARTEMISA_DIR="$(dirname "$SCRIPT_DIR")/Artemisa"
+VENUS_DIR="$(dirname "$SCRIPT_DIR")/Venus"
 
 # Colors for output
 RED='\033[0;31m'
@@ -71,6 +73,10 @@ cleanup_containers() {
 
     log_info "Stopping and removing Artemisa containers..."
     cd "$ARTEMISA_DIR"
+    sudo docker-compose down -v > /dev/null 2>&1 || true
+
+    log_info "Stopping and removing Venus containers..."
+    cd "$VENUS_DIR"
     sudo docker-compose down -v > /dev/null 2>&1 || true
     
     log_success "All containers cleaned up"
@@ -217,6 +223,80 @@ migrate_artemisa() {
 }
 
 
+# Start Venus (Interactions Service)
+start_venus() {
+    log_section "STEP 8: START VENUS (INTERACTIONS SERVICE)"
+
+    cd "$VENUS_DIR"
+
+    log_info "Building and starting Venus containers..."
+    sudo docker-compose up --build -d
+
+    log_info "Waiting for Venus database to be ready..."
+    sleep 10
+
+    # Wait for database to be healthy
+    local max_attempts=30
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        if sudo docker-compose exec -T db pg_isready -U postgres > /dev/null 2>&1; then
+            log_success "Venus database is ready"
+            break
+        fi
+
+        log_info "Waiting for database... (attempt $attempt/$max_attempts)"
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+
+    if [ $attempt -gt $max_attempts ]; then
+        log_error "Venus database failed to start"
+        exit 1
+    fi
+}
+
+# Run Venus migrations
+migrate_venus() {
+    log_section "STEP 9: VENUS DATABASE MIGRATIONS"
+
+    cd "$VENUS_DIR"
+    log_info "Running Alembic migrations..."
+    sudo docker-compose exec -T interactions-service alembic upgrade head
+
+    log_success "Venus migrations completed"
+}
+
+# Wait for Venus HTTP API to accept requests
+wait_for_venus_api() {
+    log_info "Waiting for Venus HTTP API to be ready..."
+    local max_attempts=30
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        if curl -sf http://localhost:8002/api/v1/health/ > /dev/null 2>&1; then
+            log_success "Venus API is ready"
+            return 0
+        fi
+        log_info "Venus not ready yet... (attempt $attempt/$max_attempts)"
+        sleep 3
+        attempt=$((attempt + 1))
+    done
+
+    log_error "Venus API did not become ready in time"
+    exit 1
+}
+
+# Seed sample interactions in Venus
+seed_interactions() {
+    log_section "STEP 12: SEED INTERACTIONS (VENUS)"
+
+    cd "$SCRIPT_DIR"
+    log_info "Running seed_interactions management command (POST → Venus)..."
+    sudo docker-compose exec -T gateway python manage.py seed_interactions
+    log_success "Seed completed — sample interactions created in Venus"
+}
+
 
 # Run tests
 run_tests() {
@@ -236,6 +316,14 @@ run_tests() {
         log_success "Artemisa tests passed"
     else
         log_warning "Some Artemisa tests failed (check manually)"
+    fi
+
+    log_info "Running Venus tests..."
+    cd "$VENUS_DIR"
+    if sudo docker-compose exec -T interactions-service python -m pytest tests/ -q; then
+        log_success "Venus tests passed"
+    else
+        log_warning "Some Venus tests failed (check manually)"
     fi
 }
 
@@ -260,6 +348,15 @@ show_status() {
     echo "👥 Users: http://localhost:8001/api/v1/users/"
     echo "🏢 Clients: http://localhost:8001/api/v1/clients/"
     echo "🐘 PostgreSQL: port 5433"
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}💬 VENUS (Interactions Service)${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "🔗 URL: http://localhost:8002"
+    echo "📚 API Docs: http://localhost:8002/api/docs"
+    echo "📞 Interactions: http://localhost:8002/api/v1/interactions/"
+    echo "📊 Metrics: http://localhost:8002/api/v1/interactions/metrics"
+    echo "🐘 PostgreSQL: port 5434"
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}👤 SEED USERS (same UUID in both services)${NC}"
@@ -302,8 +399,11 @@ show_help() {
     echo "  6. Run Artemisa migrations"
     echo "  7. Seed users via dual-write (same UUID in both DBs)"
     echo "  8. Seed sample clients in Artemisa"
-    echo "  9. Run tests to verify system"
-    echo " 10. Show system status"
+    echo "  9. Start Venus (Interactions Service)"
+    echo " 10. Run Venus migrations"
+    echo " 11. Seed sample interactions in Venus"
+    echo " 12. Run tests to verify system"
+    echo " 13. Show system status"
 }
 
 # Main execution
@@ -350,6 +450,10 @@ main() {
     wait_for_artemisa_api
     seed_users
     seed_clients
+    start_venus
+    migrate_venus
+    wait_for_venus_api
+    seed_interactions
 
     if [ "$skip_tests" = false ]; then
         run_tests
