@@ -52,7 +52,7 @@ class TestDualWriteCreateUser:
             mock_fwd.assert_awaited_once()
             call_kw = mock_fwd.call_args.kwargs
             assert call_kw["method"] == "POST"
-            assert call_kw["path"] == "/users"
+            assert call_kw["path"] == "/users/"
 
             # Password must NOT be in remote payload
             import json
