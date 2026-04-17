@@ -7,9 +7,9 @@ from enum import Enum
 
 
 class Role(str, Enum):
-    ADMIN = 'admin'
-    SOPORTE = 'soporte'
-    COMERCIAL = 'comercial'
+    ADMIN = "admin"
+    SOPORTE = "soporte"
+    COMERCIAL = "comercial"
 
 
 ALL_ROLES = [Role.ADMIN, Role.SOPORTE, Role.COMERCIAL]
@@ -18,22 +18,20 @@ ALL_ROLES = [Role.ADMIN, Role.SOPORTE, Role.COMERCIAL]
 # Formato: (método HTTP, recurso) → roles permitidos
 # Para cambiar un permiso: solo modificar esta tabla, nada más.
 ROUTE_PERMISSIONS: dict[tuple, list[Role]] = {
-
     # ── Usuarios ──────────────────────────────────────────────────
-    ('GET',    'users'):  [Role.ADMIN, Role.SOPORTE],
-    ('POST',   'users'):  [Role.ADMIN],
-    ('PUT',    'users'):  [Role.ADMIN],
-    ('DELETE', 'users'):  [Role.ADMIN],
-
+    ("GET", "users"): [Role.ADMIN, Role.SOPORTE],
+    ("POST", "users"): [Role.ADMIN],
+    ("PUT", "users"): [Role.ADMIN],
+    ("DELETE", "users"): [Role.ADMIN],
     # ── Clientes ──────────────────────────────────────────────────
-    ('GET',    'clients'): ALL_ROLES,
-    ('POST',   'clients'): [Role.ADMIN, Role.SOPORTE],
-    ('PUT',    'clients'): [Role.ADMIN, Role.SOPORTE],
-    ('DELETE', 'clients'): [Role.ADMIN],
-
+    ("GET", "clients"): ALL_ROLES,
+    ("POST", "clients"): [Role.ADMIN, Role.SOPORTE],
+    ("PUT", "clients"): [Role.ADMIN, Role.SOPORTE],
+    ("DELETE", "clients"): [Role.ADMIN],
     # ── Interacciones ─────────────────────────────────────────────
-    ('GET',    'interactions'): ALL_ROLES,
-    ('POST',   'interactions'): [Role.ADMIN, Role.SOPORTE],
-    ('PUT',    'interactions'): [Role.ADMIN, Role.SOPORTE],
-    ('DELETE', 'interactions'): [Role.ADMIN],
+    ("GET", "interactions"): ALL_ROLES,
+    ("POST", "interactions"): ALL_ROLES,
+    ("PUT", "interactions"): ALL_ROLES,
+    ("PATCH", "interactions"): ALL_ROLES,
+    ("DELETE", "interactions"): [Role.ADMIN],
 }

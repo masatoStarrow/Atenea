@@ -121,14 +121,27 @@ class TestInteractionCRUDProxy:
             )
             assert response.status_code == 201
 
-    def test_comercial_cannot_create_interaction(self, auth_comercial_client):
-        """Comercial accede a POST /interactions/ → 403."""
-        response = auth_comercial_client.post(
-            "/api/v1/interactions/",
-            data={"subject": "Test", "type": "call", "channel": "phone"},
-            format="json",
-        )
-        assert response.status_code == 403
+    def test_comercial_can_create_interaction(self, auth_comercial_client):
+        """Comercial puede crear interacciones → 201 (proxy a servicio)."""
+        with patch(
+            "src.adapters.outbound.http_client.interactions_client.InteractionsServiceClient.forward_request",
+            new_callable=AsyncMock,
+        ) as mock_request:
+            mock_response = MagicMock()
+            mock_response.status_code = 201
+            mock_response.json.return_value = {
+                "success": True,
+                "data": {"id": str(uuid.uuid4()), "subject": "Test"},
+                "message": "Created",
+            }
+            mock_request.return_value = mock_response
+
+            response = auth_comercial_client.post(
+                "/api/v1/interactions/",
+                data={"subject": "Test", "type": "call", "channel": "phone"},
+                format="json",
+            )
+            assert response.status_code == 201
 
     def test_admin_can_update_interaction(self, auth_admin_client):
         """Admin accede a PUT /interactions/{id}/ → proxy."""
@@ -178,16 +191,29 @@ class TestInteractionCRUDProxy:
             )
             assert response.status_code == 200
 
-    def test_comercial_cannot_update_interaction(self, auth_comercial_client):
-        """Comercial accede a PUT /interactions/{id}/ → 403."""
+    def test_comercial_can_update_own_interaction(self, auth_comercial_client):
+        """Comercial puede actualizar sus propias interacciones → 200 (proxy a servicio)."""
         interaction_id = uuid.uuid4()
 
-        response = auth_comercial_client.put(
-            f"/api/v1/interactions/{interaction_id}/",
-            data={"subject": "Updated"},
-            format="json",
-        )
-        assert response.status_code == 403
+        with patch(
+            "src.adapters.outbound.http_client.interactions_client.InteractionsServiceClient.forward_request",
+            new_callable=AsyncMock,
+        ) as mock_request:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "success": True,
+                "data": {"id": str(interaction_id), "subject": "Updated"},
+                "message": "OK",
+            }
+            mock_request.return_value = mock_response
+
+            response = auth_comercial_client.put(
+                f"/api/v1/interactions/{interaction_id}/",
+                data={"subject": "Updated"},
+                format="json",
+            )
+            assert response.status_code == 200
 
     def test_admin_can_delete_interaction(self, auth_admin_client):
         """Admin accede a DELETE /interactions/{id}/ → proxy."""
@@ -505,14 +531,27 @@ class TestCloseProxy:
             )
             assert response.status_code == 200
 
-    def test_close_interaction_comercial_forbidden(self, auth_comercial_client):
-        """Comercial NO puede cerrar interacción → 403."""
+    def test_close_interaction_comercial_can_own(self, auth_comercial_client):
+        """Comercial puede cerrar sus propias interacciones → 200 (proxy a servicio)."""
         interaction_id = uuid.uuid4()
 
-        response = auth_comercial_client.patch(
-            f"/api/v1/interactions/{interaction_id}/close/", format="json"
-        )
-        assert response.status_code == 403
+        with patch(
+            "src.adapters.outbound.http_client.interactions_client.InteractionsServiceClient.forward_request",
+            new_callable=AsyncMock,
+        ) as mock_request:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "success": True,
+                "data": {"id": str(interaction_id), "status": "closed"},
+                "message": "OK",
+            }
+            mock_request.return_value = mock_response
+
+            response = auth_comercial_client.patch(
+                f"/api/v1/interactions/{interaction_id}/close/", format="json"
+            )
+            assert response.status_code == 200
 
 
 # ── InteractionAuditProxyView Tests ──────────────────────────────────────────
