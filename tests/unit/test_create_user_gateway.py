@@ -88,7 +88,7 @@ class TestCreateUserGateway:
         mock_client.forward_request.assert_awaited_once()
         fwd_kwargs = mock_client.forward_request.call_args.kwargs
         assert fwd_kwargs["method"] == "POST"
-        assert fwd_kwargs["path"] == "/users"
+        assert fwd_kwargs["path"] == "/users/"
         # Verify password is NOT in the payload sent to users-service
         import json
         remote_body = json.loads(fwd_kwargs["body"])

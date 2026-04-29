@@ -28,8 +28,8 @@ class CreateUserGateway:
     def __init__(
         self,
         user_repository: UserRepositoryPort,
-        users_client,          # UsersServiceClient (not typed to keep core framework-free)
-        async_runner=None,     # callable(coro) → result  (injected for testability)
+        users_client,  # UsersServiceClient (not typed to keep core framework-free)
+        async_runner=None,  # callable(coro) → result  (injected for testability)
     ):
         self._repo = user_repository
         self._client = users_client
@@ -38,10 +38,12 @@ class CreateUserGateway:
     @staticmethod
     def _default_runner(coro):
         import asyncio
+
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as pool:
                     future = pool.submit(asyncio.run, coro)
                     return future.result()
@@ -84,18 +86,20 @@ class CreateUserGateway:
         )
 
         # 3. POST to users-service (same UUID, NO password)
-        payload = json.dumps({
-            "id": str(user_id),
-            "email": email,
-            "full_name": full_name,
-            "role": role,
-        }).encode()
+        payload = json.dumps(
+            {
+                "id": str(user_id),
+                "email": email,
+                "full_name": full_name,
+                "role": role,
+            }
+        ).encode()
 
         try:
             response = self._run_async(
                 self._client.forward_request(
                     method="POST",
-                    path="/users",
+                    path="/users/",
                     body=payload,
                     user_id=request_user_id,
                     user_role=request_user_role,
@@ -103,7 +107,9 @@ class CreateUserGateway:
             )
         except ServiceUnavailableError:
             # Rollback gateway DB
-            logger.error("dual_write_rollback_service_unavailable", user_id=str(user_id))
+            logger.error(
+                "dual_write_rollback_service_unavailable", user_id=str(user_id)
+            )
             self._repo.delete_by_id(user_id)
             raise
 
