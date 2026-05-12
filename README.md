@@ -347,6 +347,11 @@ Tabla centralizada en `src/infrastructure/permissions/role_permissions.py`. **Un
 | **clients** | todos | admin, soporte | admin, soporte | admin |
 | **interactions** | todos | admin, soporte | admin, soporte | admin |
 
+> **Nota de visibilidad por rol (aplicada en los microservicios, no en el Gateway):**
+> - **Admin/Soporte:** ven todas las interacciones.
+> - **Comercial:** ve TODAS las interacciones de clientes donde tiene al menos una interacción propia ("clientes asignados"). Puede crear interacciones, pero solo puede editar/cerrar/subir adjuntos a sus propias. Follow-ups siempre son propios.
+> - El Gateway solo verifica acceso al endpoint. El filtrado de datos se hace en Venus.
+
 ---
 
 ## Middleware stack

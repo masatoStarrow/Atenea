@@ -35,13 +35,25 @@ class Command(BaseCommand):
         },
         {
             'email': 'soporte@crm.com',
-            'full_name': 'Agente Soporte',
+            'full_name': 'Carlos Mendoza',
+            'role': 'soporte',
+            'password': 'Temporal123!',
+        },
+        {
+            'email': 'soporte2@crm.com',
+            'full_name': 'Laura Garcia',
             'role': 'soporte',
             'password': 'Temporal123!',
         },
         {
             'email': 'comercial@crm.com',
-            'full_name': 'Agente Comercial',
+            'full_name': 'Ana Rodriguez',
+            'role': 'comercial',
+            'password': 'Temporal123!',
+        },
+        {
+            'email': 'comercial2@crm.com',
+            'full_name': 'Martin Lopez',
             'role': 'comercial',
             'password': 'Temporal123!',
         },
