@@ -145,12 +145,13 @@ Atenea/
 │   │   │   │   ├── views.py        #   → UserProxyView: ★ dual-write en POST/PUT/DELETE
 │   │   │   │   │                   #   → ClientProxyView: proxy puro a Artemisa
 │   │   │   │   │                   #   → InteractionProxyView: proxy puro a Venus (CRUD)
+│   │   │   │   │                   #   → InteractionByClientProxyView: interacciones por cliente
 │   │   │   │   │                   #   → InteractionMetricsProxyView: métricas globales
 │   │   │   │   │                   #   → InteractionClientSummaryProxyView: resumen por cliente
 │   │   │   │   │                   #   → InteractionFollowUpsProxyView: seguimientos
 │   │   │   │   │                   #   → InteractionCloseProxyView: cerrar interacción
 │   │   │   │   │                   #   → InteractionAuditProxyView: historial de cambios
-│   │   │   │                   #   → InteractionAttachmentProxyView: adjuntos (upload, list, download, delete)
+│   │   │   │   │                   #   → InteractionAttachmentProxyView: adjuntos (upload, list, download, delete)
 │   │   │   │   ├── serializers.py  #   → Serializers para documentación Swagger
 │   │   │   │   └── urls.py         #   → /api/v1/users/, /clients/, /interactions/*
 │   │   │   │
@@ -200,12 +201,13 @@ Atenea/
     ├── unit/
     │   ├── test_login_use_case.py       #  5 tests — login: happy path, credenciales inválidas
     │   ├── test_validate_token.py       #  5 tests — tokens válidos/expirados/malformados
-    │   └── test_create_user_gateway.py  #  6 tests — dual-write: happy path, rollback, UUID match
+    │   ├── test_create_user_gateway.py  #  6 tests — dual-write: happy path, rollback, UUID match
+    │   └── test_validators.py           # 21 tests — password, name, phone, company validators
     └── integration/
-        ├── test_auth_endpoints.py       #  7 tests — login, logout, me via HTTP
-        ├── test_gateway_proxy.py        # 13 tests — permisos, headers, proxy, tokens
-        ├── test_dual_write.py           # 12 tests — create/update/delete con dual-write
-        └── test_client_endpoints.py     # 26 tests — CRUD clientes, permisos, filtros
+        ├── test_auth_endpoints.py       # 13 tests — login, logout, me via HTTP
+        ├── test_gateway_proxy.py        # 12 tests — permisos, headers, proxy, tokens
+        ├── test_dual_write.py           #  7 tests — create/update/delete con dual-write
+        └── test_interactions_proxy.py   # 32 tests — CRUD interacciones, métricas, attachments, permisos
 ```
 
 ### ¿Qué hace cada capa? (explicación rápida)
@@ -243,7 +245,7 @@ Atenea/
    a) Verifica que no esté en blacklist
    b) Decodifica con ValidateToken use case
    c) Busca el User en la BD y lo inyecta en request.user
-   d) Inyecta headers internos: X-User-Id, X-User-Role, X-Request-Id
+   d) Inyecta en request: request.user, request.auth_token, request.auth_claims
        │
 8. RolePermission verifica: ¿este rol tiene acceso a este método+recurso?
        │
@@ -341,11 +343,11 @@ POST /api/v1/users/  { email, full_name, role, password }
 
 Tabla centralizada en `src/infrastructure/permissions/role_permissions.py`. **Un solo lugar para cambiar permisos:**
 
-| Recurso | GET | POST | PUT | DELETE |
-|---|---|---|---|---|
-| **users** | admin, soporte | admin | admin | admin |
-| **clients** | todos | admin, soporte | admin, soporte | admin |
-| **interactions** | todos | admin, soporte | admin, soporte | admin |
+| Recurso | GET | POST | PUT | PATCH | DELETE |
+|---|---|---|---|---|---|
+| **users** | admin, soporte | admin | admin | — | admin |
+| **clients** | todos | admin, soporte | admin, soporte | — | admin |
+| **interactions** | todos | todos | todos | todos | admin |
 
 > **Nota de visibilidad por rol (aplicada en los microservicios, no en el Gateway):**
 > - **Admin/Soporte:** ven todas las interacciones.
@@ -370,9 +372,9 @@ Request del frontend
     │
     ▼
 3. JWTMiddleware          → Valida Bearer token. Si no hay token o es inválido → 401
-    │                       Rutas públicas: /auth/login, /health/, /docs/, /admin/
-    │                       Verifica blacklist (tokens invalidados por logout)
-    │                       Inyecta: request.user, request.auth_token
+     │                       Rutas públicas: /auth/login, /health/, /docs/, /redoc/, /schema/, /admin/
+     │                       Verifica blacklist (tokens invalidados por logout)
+     │                       Inyecta: request.user, request.auth_token, request.auth_claims
     │
     ▼
 4. RolePermission (DRF)   → Verifica (método, recurso) contra ROUTE_PERMISSIONS
@@ -484,7 +486,7 @@ docker network create crm_network
 
 ## Tests
 
-**69 tests** — 0 failures, 0 warnings
+**101 tests** — 0 failures, 0 warnings
 
 ```
 tests/
@@ -492,12 +494,13 @@ tests/
 ├── unit/
 │   ├── test_login_use_case.py           #  5 tests — login: happy path, credenciales inválidas
 │   ├── test_validate_token.py           #  5 tests — tokens válidos/expirados/malformados
-│   └── test_create_user_gateway.py      #  6 tests — dual-write: happy path, rollback, UUID match
+│   ├── test_create_user_gateway.py      #  6 tests — dual-write: happy path, rollback, UUID match
+│   └── test_validators.py               # 21 tests — password, name, phone, company validators
 └── integration/
-    ├── test_auth_endpoints.py           #  7 tests — login, logout, me via HTTP
-    ├── test_gateway_proxy.py            # 13 tests — permisos, headers, proxy, tokens
-    ├── test_dual_write.py               # 12 tests — create/update/delete con dual-write
-    └── test_client_endpoints.py         # 21 tests — CRUD clientes, permisos, filtros
+    ├── test_auth_endpoints.py           # 13 tests — login, logout, me via HTTP
+    ├── test_gateway_proxy.py            # 12 tests — permisos, headers, proxy, tokens
+    ├── test_dual_write.py               #  7 tests — create/update/delete con dual-write
+    └── test_interactions_proxy.py       # 32 tests — CRUD interacciones, métricas, attachments, permisos
 ```
 
 ```bash
