@@ -19,7 +19,7 @@ ALL_ROLES = [Role.ADMIN, Role.SOPORTE, Role.COMERCIAL]
 # Para cambiar un permiso: solo modificar esta tabla, nada más.
 ROUTE_PERMISSIONS: dict[tuple, list[Role]] = {
     # ── Usuarios ──────────────────────────────────────────────────
-    ("GET", "users"): [Role.ADMIN, Role.SOPORTE],
+    ("GET", "users"): ALL_ROLES,
     ("POST", "users"): [Role.ADMIN],
     ("PUT", "users"): [Role.ADMIN],
     ("DELETE", "users"): [Role.ADMIN],
