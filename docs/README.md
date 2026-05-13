@@ -220,9 +220,9 @@ docker-compose exec ... seed_users       ← requiere Artemisa corriendo
 
 | Método | Ruta | Roles permitidos |
 |---|---|---|
-| `GET` | `/api/v1/users/` | admin, soporte |
+| `GET` | `/api/v1/users/` | todos |
 | `POST` | `/api/v1/users/` | admin |
-| `GET` | `/api/v1/users/{id}/` | admin, soporte |
+| `GET` | `/api/v1/users/{id}/` | todos |
 | `PUT` | `/api/v1/users/{id}/` | admin |
 | `DELETE` | `/api/v1/users/{id}/` | admin |
 
@@ -393,7 +393,7 @@ Existe **un único archivo centralizado** con todos los permisos: `src/infrastru
 
 ```python
 ROUTE_PERMISSIONS = {
-    ('GET',    'users'):        [Role.ADMIN, Role.SOPORTE],
+    ('GET',    'users'):        ALL_ROLES,
     ('POST',   'users'):        [Role.ADMIN],
     ('DELETE', 'users'):        [Role.ADMIN],
     ('GET',    'interactions'): ALL_ROLES,
@@ -558,7 +558,7 @@ tests/
 - ❌ Comercial no puede DELETE /users/ → 403
 - ✅ Admin puede GET /users/ → 200
 - ✅ Soporte puede GET /users/ → 200
-- ❌ Comercial no puede GET /users/ → 403
+- ✅ Comercial puede GET /users/ → 200
 - ✅ Proxy envía headers internos (X-User-Id, X-User-Role)
 - ❌ Microservicio caído → 503
 - ✅ Token válido accede a endpoint protegido

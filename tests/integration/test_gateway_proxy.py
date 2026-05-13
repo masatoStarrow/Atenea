@@ -80,10 +80,21 @@ class TestUserProxyPermissions:
             response = auth_soporte_client.get('/api/v1/users/')
             assert response.status_code == 200
 
-    def test_comercial_cannot_list_users(self, auth_comercial_client):
-        """Comercial accede a GET /users/ → 403."""
-        response = auth_comercial_client.get('/api/v1/users/')
-        assert response.status_code == 403
+    def test_comercial_can_list_users(self, auth_comercial_client):
+        """Comercial accede a GET /users/ → proxy."""
+        with patch(
+            'src.adapters.outbound.http_client.users_client.UsersServiceClient.forward_request',
+            new_callable=AsyncMock,
+        ) as mock_request:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'success': True, 'data': [], 'message': 'OK'
+            }
+            mock_request.return_value = mock_response
+
+            response = auth_comercial_client.get('/api/v1/users/')
+            assert response.status_code == 200
 
 
 @pytest.mark.django_db
